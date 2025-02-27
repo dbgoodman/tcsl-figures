@@ -1,0 +1,23 @@
+# Data source paths
+data_sources:
+  box:
+    root: "/Users/dbg/Library/CloudStorage/Box-Box/tcsl"
+    # Add specific dataset paths relative to root as needed
+    
+  analysis_repo:
+    root: "/Users/dbg/code/tcsl"
+    processed_data: "processed_data/"  # adjust this path based on your analysis repo structure
+    
+  s3:
+    bucket: "tcsl-data"  # replace with your actual bucket name
+    prefix: "data/"      # adjust as needed
+    
+# Output paths (relative to repository root)
+output:
+  figures: "output/figures"
+  tables: "output/tables"
+
+# Cache settings
+cache:
+  processed_data: "data/processed"
+  raw_data_links: "data/raw" 

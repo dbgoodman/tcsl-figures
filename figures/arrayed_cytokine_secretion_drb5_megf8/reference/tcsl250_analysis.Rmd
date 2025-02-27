@@ -1,0 +1,300 @@
+---
+title: "cytokine_analysis"
+output: html_document
+date: "2024-11-20"
+html_document:
+  toc: true
+  toc_float: true
+  number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+library(ggplot2)
+library(patchwork)
+library(stringr)
+
+
+
+data_dir <- '/Users/dbg/Library/CloudStorage/Box-Box/tcsl/flow/20241213.tcsl250 cytokines/'
+```
+
+
+## Data Loading
+
+```{r}
+df_raw <- fread(file=paste0(data_dir, 'populations.csv'))
+
+# keep *.fcs only
+df_raw <- df_raw[grepl('.fcs', V1)]
+
+# Extract plate and well
+df_raw[, `:=`(plate = as.integer(sub(".*Plate_([0-9]+).*", "\\1", V1)),
+          well = sub(".*-([A-Z][0-9]+) .*", "\\1", V1))]
+
+# remove unneeded columns
+df_raw[, grep("^V", names(df_raw)) := NULL]
+
+# melt
+df_melt <- unique(melt(df_raw, id.vars=c('plate', 'well'), variable.name='gate_str', value.name='value'))
+
+# extract columns
+df_melt[, `:=`(
+  gate = sub(" \\|.*", "", sub(".*/", "", gate_str)),  # Remove everything after '|' and handle top-level gates
+  parent_gate = fifelse(grepl("^([^/]+) \\|", gate_str),        # Top-level gates (no preceding '/')
+                   # Set parent to NA for top-level gates
+                   NA_character_,                         
+                   # Extract parent for nested gates, skip internal TNFa+IL2+ for triple
+                   gsub(".*/([^/]+)/[^/]+ \\|.*", "\\1", gsub('Q10: IFNg\\+ , TNF-a\\+/', '', gate_str))),  
+  measure = ifelse(grepl("\\| Freq", gate_str), "freq", 
+                   ifelse(grepl("\\| Count", gate_str), "count", NA))
+)]
+
+# if parent is 'Single Cells', make parent 'Lymphocytes' and keep only gate str with 'Freq. of Lymphocytes'
+df_melt[parent_gate == 'Single Cells', parent_gate := 'Lymphocytes']
+df_melt <- df_melt[is.na(parent_gate) | parent_gate != 'Lymphocytes' | grepl('Freq. of Lymphocytes', gate_str)]
+
+# add CAR status
+df_melt[, CAR := grepl('_car', gate_str)]
+
+# add CD4/CD8 status
+df_melt[, subset := 'None']
+df_melt[grepl('/(CD[348])/', gate_str), subset := gsub('.*/(CD[348])/.*', '\\1', gate_str)]
+
+# get parent subset and car status
+df_melt[, parent_subset := subset]
+df_melt[grepl('^CD[348]$', parent_gate), parent_subset := 'None']
+df_melt[, parent_CAR := CAR]
+df_melt[gate == 'live_car', parent_CAR := FALSE]
+
+# separate freq and count
+df_melt <- dcast(df_melt, ... ~ measure, value.var='value')
+
+# remove count/freq from gate_str
+df_melt[, gate_str := sub(' \\|.*', '', gate_str)]
+
+# consolidate separate freq/count rows
+df_melt[is.na(parent_gate), freq := freq[!is.na(freq)], by= .(plate, well, gate, CAR, subset)]
+df_melt[is.na(parent_gate), count := count[!is.na(count)], by= .(plate, well, gate, CAR, subset)]
+df_melt <- unique(df_melt)
+
+# set NA freq to 0
+df_melt[is.na(freq), freq := 0]
+
+```
+
+## Propagate Counts
+
+```{r}
+# Propagate counts iteratively
+while (any(is.na(df_melt[!(gate %in% c('beads','Lymphocytes')), count]))) {
+
+  # get new counts
+  df_new_counts <- df_melt[!is.na(count), .(CAR, gate, subset, well, plate, count)][df_melt[is.na(count)],   
+    on=.(CAR=parent_CAR, gate=parent_gate, subset=parent_subset, well, plate)][
+      !is.na(count)][, 
+      .(plate, well, gate=i.gate, CAR=i.CAR, subset=i.subset,
+        count=round(freq/100 * count))]
+  
+  # add new counts onto df_melt
+  df_melt[df_new_counts, 
+          on = .(plate, well, gate, CAR, subset), 
+          count := fifelse(is.na(count), i.count, count)]
+}
+```
+
+## Clean Gates
+
+```{r}
+
+# Create a copy of df_melt to work on gate names
+df_melt[, gate_clean := gate]
+
+# Fix hyphen in TNFa
+df_melt[, gate_clean := gsub("TNF-a", "TNFa", gate_clean)]  # Lowercase lymphocytes
+
+# Apply regex transformations
+df_melt[, gate_clean := gsub("\\+", "_pos", gate_clean)]    # Replace '+' with 'pos' and handle trailing spaces
+df_melt[, gate_clean := gsub("\\-", "_neg", gate_clean)]    # Replace '-' with 'neg' and handle trailing spaces
+df_melt[, gate_clean := gsub(" , ", ".", gate_clean)]       # Remove spaces and commas after ','
+df_melt[, gate_clean := gsub("^\\s+", "", gate_clean)]      # Remove spaces and commas after ','
+
+# Simplify Q gates
+df_melt[, gate_clean := gsub("^Q[0-9]+: ", "", gate_clean)]  # Remove 'QX:' prefix and keep CDs intact for clarity
+
+# Rename triple cytokine gate
+df_melt[grepl('Q10: IFNg\\+ , TNF-a\\+/', gate_str), 
+  gate_clean := paste0('IFNg_pos.TNFa_pos.', gate_clean)]
+
+# Convert to a factor to preserve ordering
+df_melt[, gate_clean := factor(gate_clean, levels = unique(gate_clean))]
+
+# Check the updated levels
+unique(df_melt$gate_clean)
+```
+
+## Add Plate Map
+
+```{r}
+# Function to load and process a plate map
+# Function to load and process a plate mapx
+load_plate_metadata <- function(plate_map_filepath, exclude_empty = TRUE, rows = LETTERS[1:8], columns = 12) {
+  # Load plate map
+  plate_map <- fread(plate_map_filepath, header = FALSE)
+  
+  # Truncate or pad rows
+  if (nrow(plate_map) > length(rows)) {
+    plate_map <- plate_map[1:length(rows), ]
+  } else if (nrow(plate_map) < length(rows)) {
+    plate_map <- rbind(plate_map, matrix(NA, nrow = length(rows) - nrow(plate_map), ncol = ncol(plate_map)))
+  }
+  
+  # Truncate or pad columns
+  if (ncol(plate_map) > columns) {
+    plate_map <- plate_map[, 1:columns, with = FALSE]
+  } else if (ncol(plate_map) < columns) {
+    plate_map <- cbind(plate_map, matrix(NA, nrow = nrow(plate_map), ncol = columns - ncol(plate_map)))
+  }
+  
+  # Add row labels
+  plate_map[, rn := rows[seq_len(nrow(plate_map))]]  # Add row names as a column
+  
+  # Set column names
+  setnames(plate_map, c(as.character(seq_len(columns)), "rn"))
+  
+  # Convert to long format
+  long_data <- melt(as.data.table(plate_map), id.vars = "rn", variable.name = "col", value.name = "name")
+  long_data[, `:=`(well = paste0(rn, col), row = rn, col = as.integer(col))]
+  
+  # Exclude empty wells if required
+  if (exclude_empty) {
+    long_data <- long_data[!is.na(name)]
+  }
+  
+  # Return the long format data
+  return(long_data[, .(well, row, col, name)])
+}
+
+
+# Load plate maps
+plate_map <- load_plate_metadata(paste0(data_dir, "plate_map.csv"))
+
+# Map plate map names onto df_melt
+df_melt <- merge(df_melt, plate_map, by = c("well"), all.x = TRUE)
+
+```
+
+```{r}
+# Step 1: Rename the `well` field to `well_id`
+setnames(df_melt, "name", "car_id")
+
+# Step 2a: Convert `car_id` to a factor with correct order (1-16, U)
+df_melt[, car_id := factor(car_id, levels = c(as.character(1:16), "NEG","POS"))]
+
+# Step 3: Join `df_melt` with `car_map.csv` on `car_id`
+car_map <- fread("car_map.csv")  # Load the mapping file
+car_map[, car_id := factor(car_id)]
+car_map[, car_name := factor(car_name)]
+df_melt <- merge(df_melt, car_map, by = "car_id", all.x = TRUE)
+df_melt[is.na(car_name), car_name := car_id]  # Replace missing car names with car_id
+```
+
+## Plots
+
+```{r fig.width=10, fig.height=25}
+make_cytokine_plot <- function(this_gate) {
+  ggplot(df_melt[
+      CAR == T & !(car_name %in% c('POS','NEG')) & gate_clean == this_gate & !is.na(car_name)][,
+        car_name := reorder(car_name, freq)]) + 
+    geom_point(aes(x=car_name, y=freq, size=count, color=subset)) + 
+    facet_wrap(~subset) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+    labs(title = this_gate)
+}
+
+make_cytokine_plot("IL2_pos") /
+  make_cytokine_plot("TNFa_pos") /
+  make_cytokine_plot("IFNg_pos") /
+  make_cytokine_plot("IFNg_pos.IL2_pos") /
+  make_cytokine_plot("IFNg_pos.TNFa_pos") /
+  make_cytokine_plot("IL2_pos.TNFa_pos") /
+  make_cytokine_plot("IFNg_pos.TNFa_pos.IL2_pos")
+```
+
+```{r fig.width=10, fig.height=25}
+make_cytokine_plot <- function(this_gate) {
+  ggplot(df_melt[
+      CAR == T & !(car_name %in% c('POS','NEG')) & gate_clean == this_gate & !is.na(car_name)][,
+        car_name := reorder(car_name, freq)]) + 
+    geom_point(aes(x=car_name, y=freq, size=count, color=subset)) + 
+    facet_wrap(~subset) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+    labs(title = this_gate)
+}
+
+chosen_gate <- c(
+  "IL2_pos", "TNFa_pos", "IFNg_pos",
+  "IFNg_pos.IL2_pos", "IFNg_pos.TNFa_pos",
+  "IL2_pos.TNFa_pos", "IFNg_pos.TNFa_pos.IL2_pos")
+
+# Create a list of plots using lapply
+plot_list <- lapply(chosen_gate, make_cytokine_plot)
+
+# Combine all plots using patchwork
+combined_plot <- Reduce(`/`, plot_list)
+
+# Display the combined plot
+combined_plot
+```
+
+## Tile plot
+
+```{r fig.width=15, fig.height=7}
+
+ggplot(df_melt[
+      CAR == T & !(car_name %in% c('POS','NEG')) & !is.na(car_name)][
+        gate_clean %in% chosen_gate, .(mean_freq= mean(freq)), by=.(car_name, subset, gate_clean)][,
+          scaled_mean_freq := scale(mean_freq), by=.(subset, gate_clean)][, 
+            car_name := reorder(car_name, scaled_mean_freq)][, 
+              gate_clean := factor(gate_clean, levels = unique(gate_clean[order(str_count(gate_clean, "\\."))]))]
+) + 
+  geom_tile(aes(y=car_name, x=gate_clean, fill=scaled_mean_freq)) + 
+  facet_grid(~subset) + 
+  scale_fill_distiller(palette='Spectral') + 
+  geom_text(aes(y=car_name, x=gate_clean, label=round(mean_freq))) + 
+  scale_x_discrete(labels=function(x) gsub('\\.', '\n',gsub('_pos','',x))) +
+  labs(x='Cytokine combinations', y='CARs', fill='Relative cytokine secretion\nz-score xform\n% positive labelled')
+
+ggplot(df_melt[
+      CAR == T & !(car_name %in% c('POS','NEG')) & !is.na(car_name)][
+        gate_clean %in% chosen_gate, .(mean_freq= mean(freq)), by=.(car_name, subset, gate_clean)][,
+          scaled_mean_freq := scale(mean_freq), by=.(subset, gate_clean)][, 
+            car_name := reorder(car_name, scaled_mean_freq)][, 
+              gate_clean := factor(gate_clean, levels = unique(gate_clean[order(str_count(gate_clean, "\\."))]))]
+) + 
+  geom_tile(aes(y=car_name, x=gate_clean, fill=mean_freq)) + 
+  facet_grid(~subset) + 
+  scale_fill_distiller(palette='YlGnBu') + 
+  geom_text(aes(y=car_name, x=gate_clean, label=round(mean_freq))) + 
+  scale_x_discrete(labels=function(x) gsub('\\.', '\n',gsub('_pos','',x))) +
+  labs(x='Cytokine combinations', y='CARs', fill='Absolute cytokine secretion\n')
+```
+
+
+```{r}
+# Combine with TCSL248 data
+
+df_tcsl248_melt <- fread( 
+  "/Users/dbg/Library/CloudStorage/Box-Box/tcsl/flow/20241112_tcsl248_cytokine/processed_cytokine_data.csv")
+
+df_tcsl248_melt
+df_melt_combined <- rbind(
+  df_melt[, expt := 'tcsl250'],
+  df_tcsl248_melt[, expt := 'tcsl248'])
+
+# cast 250 vs 248:
+dcast(df_melt_combined, car_id + CAR + car_name + gate_clean + subset + parent_subset + parent_CAR + car_id ~ expt, value.var = "freq")
+```
+  
+  
