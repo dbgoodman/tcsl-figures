@@ -106,24 +106,50 @@ process_experiment_data <- function(experiment_dir, output_file = NULL) {
   df_melt[, gate_clean := gsub("^\\s+", "", gate_clean)]
   df_melt[, gate_clean := gsub("^Q[0-9]+: ", "", gate_clean)]
   
+  # Handle triple cytokine gate exactly as in reference
   df_melt[grepl('Q10: IFNg\\+ , TNF-a\\+/', gate_str), 
-          gate_clean := paste0('IFNg_pos.TNFa_pos.', gate_clean)]
+    gate_clean := paste0('IFNg_pos.TNFa_pos.', gate_clean)]
+  
+  # Convert to factor to preserve ordering
+  df_melt[, gate_clean := factor(gate_clean, levels = unique(gate_clean))]
   
   # Load plate map and car map exactly as in reference
-  plate_map <- fread(file.path(experiment_dir, "plate_map.csv"))
-  plate_map[, rn := LETTERS[1:nrow(plate_map)]]
-  long_plate <- melt(plate_map, id.vars = "rn", 
-                    variable.name = "col", 
-                    value.name = "car_id")
-  long_plate[, `:=`(
-    well = paste0(rn, as.integer(sub("V", "", col))),
-    row = rn,
-    col = as.integer(sub("V", "", col))
-  )]
-  long_plate <- long_plate[!is.na(car_id)]
+  plate_map <- fread(file.path(experiment_dir, "plate_map.csv"), header = FALSE, na.strings = "")
   
-  # Merge plate map with data, including row and col
-  df_melt <- merge(df_melt, long_plate[, .(well, car_id, row, col)], by = "well", all.x = TRUE)
+  # Truncate or pad rows to 8
+  if (nrow(plate_map) > 8) {
+    plate_map <- plate_map[1:8, ]
+  } else if (nrow(plate_map) < 8) {
+    plate_map <- rbind(plate_map, matrix(NA, nrow = 8 - nrow(plate_map), ncol = ncol(plate_map)))
+  }
+  
+  # Truncate or pad columns to 12
+  if (ncol(plate_map) > 12) {
+    plate_map <- plate_map[, 1:12, with = FALSE]
+  } else if (ncol(plate_map) < 12) {
+    plate_map <- cbind(plate_map, matrix(NA, nrow = nrow(plate_map), ncol = 12 - ncol(plate_map)))
+  }
+  
+  # Add row labels and set column names
+  plate_map[, rn := LETTERS[1:8]]
+  setnames(plate_map, c(as.character(1:12), "rn"))
+  
+  # Convert to long format
+  long_plate <- melt(plate_map, id.vars = "rn", variable.name = "col", value.name = "name")
+  long_plate[, `:=`(
+    well = paste0(rn, col),
+    row = rn,
+    col = as.integer(col)
+  )]
+  
+  # Exclude empty wells
+  long_plate <- long_plate[!is.na(name)]
+  
+  # Merge plate map with data - keep all rows from df_melt
+  df_melt <- merge(df_melt, long_plate[, .(well, row, col, name)], by = "well", all.x = TRUE)
+  
+  # Rename name to car_id
+  setnames(df_melt, "name", "car_id")
   
   # Convert car_id to factor with correct order (1-16, NEG, POS)
   df_melt[, car_id := factor(car_id, levels = c(as.character(1:16), "NEG", "POS"))]
@@ -133,7 +159,7 @@ process_experiment_data <- function(experiment_dir, output_file = NULL) {
   car_map[, car_id := factor(car_id)]
   car_map[, car_name := factor(car_name)]
   df_melt <- merge(df_melt, car_map, by = "car_id", all.x = TRUE)
-  df_melt[is.na(car_name), car_name := car_id]  # Replace missing car names with car_id
+  df_melt[is.na(car_name), car_name := as.character(car_id)]  # Replace missing car names with car_id
   
   # Save if output file specified
   if (!is.null(output_file)) {
