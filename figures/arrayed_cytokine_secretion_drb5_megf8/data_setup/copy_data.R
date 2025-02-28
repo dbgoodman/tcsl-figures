@@ -17,6 +17,13 @@ experiments <- list(
       aurora_combined = "flow/240311_tcsl_242_cytokine/240311_cytokine_both_donors.csv"
     )
   ),
+  tcsl247 = list(
+    files = c(
+      cytokine = "flow/20240528_tcsl247_invitro_cytokine/TCSL247 Cytokine Unmixed.csv",
+      plate_map = "flow/20240528_tcsl247_invitro_cytokine/plate_map.csv",
+      sample_metadata = "flow/20240528_tcsl247_invitro_cytokine/sample_metadata.csv"
+    )
+  ),
   tcsl248 = list(
     files = c(
       cytokine = "flow/20241112_tcsl248_cytokine/241112_tcsl248_cytokine_TCSL248 Cytokine Unmixed.CSV",

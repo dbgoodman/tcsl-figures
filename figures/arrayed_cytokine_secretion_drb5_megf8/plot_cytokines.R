@@ -215,6 +215,89 @@ create_combined_plot <- function(df_plot, title_suffix = "") {
   return(p)
 }
 
+# Create combined plot with normalization to CD3z
+create_normalized_plot <- function(df_plot, title_suffix = "", normalize_to = 'Zeta') {
+  # Define experiment colors
+  expt_colors <- c(
+    "TCSL241" = "#F8766D",  # red
+    "TCSL242" = "#00BA38",  # green
+    "TCSL247_D1" = "#619CFF", # blue
+    "TCSL247_D2" = "#F564E3", # pink
+    "TCSL247_D1V" = "#B79F00", # yellow
+    "TCSL248" = "#00BFC4",  # cyan
+    "TCSL250" = "#C77CFF"   # purple
+  )
+  
+  # First calculate mean Zeta values for each experiment and variable
+  if (normalize_to == 'average') {
+    norm_means <- df_plot[,
+      .(norm_to_freq = mean(freq)), 
+      by=.(expt, variable)
+    ]
+  } else {
+    norm_means <- df_plot[car_name == normalize_to,
+      .(norm_to_freq = mean(freq)), 
+      by=.(expt, variable)
+    ]
+  }
+  
+  if (nrow(norm_means) == 0) {
+    stop("No normalized CAR data found for normalization")
+  }
+  
+  # Calculate fold change for each replicate relative to mean Zeta
+  df_plot_norm <- df_plot[norm_means, 
+    on = .(expt, variable),
+    .(expt, variable, car_name, freq, fold_change = freq/norm_to_freq)
+  ]
+  
+  # Calculate means for larger points and ranking
+  df_means <- df_plot_norm[, .(
+    mean_fold_change = mean(fold_change),
+    n_replicates = .N
+  ), by=.(expt, variable, car_name)]
+  
+  # Rank CARs based on mean fold change within each variable
+  df_means[, rank := frank(mean_fold_change, ties.method = "first"), by=.(variable)]
+  df_plot_norm[df_means, rank := i.rank, on=.(expt, variable, car_name)]
+  
+  # Create plot
+  p <- ggplot() +
+    # Add points for individual replicates
+    geom_point(data = df_plot_norm, 
+               aes(x = reorder(car_name, rank), y = fold_change, color = expt),
+               size = 1, alpha = 0.5) +
+    # Add points for means
+    geom_point(data = df_means,
+               aes(x = reorder(car_name, rank), y = mean_fold_change, color = expt),
+               size = 3) +
+    # Add horizontal line at y=1 (CD3z level)
+    geom_hline(yintercept = 1, linetype = "dashed", color = "gray50") +
+    facet_wrap(~ variable, 
+               scales = "free_y", 
+               ncol = 3,
+               strip.position = "top",
+               labeller = labeller(variable = function(x) gsub("_pos", "", x))) +
+    theme_bw() +
+    theme(
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.spacing = unit(0.5, "lines"),
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+    ) +
+    scale_color_manual(values = expt_colors) +
+    labs(
+      x = "CAR",
+      y = paste("Fold change in % positive cells vs.", normalize_to),
+      color = "Experiment",
+      title = paste0(
+        "Cytokine secretion (as % positive cells) relative to ",
+        normalize_to, ", ", title_suffix)
+    )
+  
+  return(p)
+}
+
 # Initialize plots list
 plots <- list()
 
@@ -266,13 +349,45 @@ plots[["first_round_cars"]] <- create_combined_plot(
   " (TCSL241/242, all CARs)"
 )
 
+# Create normalized versions of plots that include CD3z
+# 1. All experiments with Zeta
+plots[["all_experiments_with_zeta_normalized"]] <- create_normalized_plot(
+  df_all_expts[car_name %in% zeta_cars & 
+               expt %in% c("TCSL241", "TCSL242", "TCSL248", "TCSL250")],
+  " (All experiments with Zeta)", normalize_to = 'Zeta'
+)
+
+# 2. TCSL248/250 all CARs
+plots[["second_round_cars_normalized"]] <- create_normalized_plot(
+  df_all_expts[expt %in% c("TCSL248", "TCSL250") & 
+               !(car_name %in% hidden_cars)],
+  " (TCSL248/250, all CARs)", normalize_to = 'Zeta'
+)
+
+# 3. First round cars (TCSL241/242)
+plots[["first_round_cars_normalized"]] <- create_normalized_plot(
+  df_all_expts[expt %in% c("TCSL241", "TCSL242") & 
+               !(car_name %in% hidden_cars)],
+  " (TCSL241/242, all CARs)", normalize_to = 'Zeta'
+)
+
+plots[["zeta_cd28_tnr9_drb5_variants"]] <- create_normalized_plot(
+  df_all_expts[car_name %in% c("Zeta", "CD28", "TNR9", "DRB5", "DRB528C") & 
+               expt %in% c("TCSL241", "TCSL242", "TCSL247_D1", "TCSL247_D2", "TCSL248", "TCSL250")],
+  " (Zeta, CD28, TNR9, DRB5 variants)", normalize_to = 'average'
+)
+
 # Save plots
 plot_dimensions <- list(
   "all_experiments_with_zeta" = c(15, 10),
-  "tcsl247_248_250_with_drb528c" = c(15, 10),
+  "tcsl247_248_250_with_drb528c" = c(8, 5),
+  "zeta_cd28_tnr9_drb5_variants" = c(12, 6),
   "all_experiments_common_cars" = c(15, 10),
-  "second_round_cars" = c(15, 10)
-
+  "first_round_cars" = c(15, 10),
+  "second_round_cars" = c(15, 10),
+  "all_experiments_with_zeta_normalized" = c(8, 5),
+  "second_round_cars_normalized" = c(12, 5),
+  "first_round_cars_normalized" = c(12, 5)
 )
 
 # Save each plot

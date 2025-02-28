@@ -1,0 +1,4 @@
+*.pdf binary
+*.pdf diff=pdf
+*.pdf linguist-documentation
+*.pdf linguist-generated=true 
