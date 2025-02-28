@@ -6,6 +6,7 @@
 library(data.table)
 library(stringr)
 library(here)
+library(dplyr)
 
 #' Process flow cytometry population data for a single experiment
 #' 
@@ -232,6 +233,109 @@ process_241_242_data <- function(input_file, output_file = NULL) {
   return(dt)
 }
 
+#' Process TCSL247 data which has a different format and multiple donors
+#' 
+#' @param input_dir Directory containing the TCSL247 data files
+#' @param output_file Path to save the processed data
+#' @return Processed data.table in format compatible with other experiments
+process_247_data <- function(input_dir, output_file = NULL) {
+  # Load data
+  dt <- fread(file.path(input_dir, "TCSL247 Cytokine Unmixed.csv"))
+  plate_map <- fread(file.path(input_dir, "plate_map.csv"), header=FALSE)
+  sample_metadata <- fread(file.path(input_dir, "sample_metadata.csv"))
+  
+  # Extract relevant columns (% Parent for cytokines and cell count)
+  cytokine_cols <- c(
+    "IL2" = "IL2 % Parent",
+    "IFNg" = "IFNg % Parent",
+    "TNFa" = "TNFa % Parent"
+  )
+  
+  # Select and rename columns
+  dt_subset <- dt[, c("V1", cytokine_cols, "cells Count"), with=FALSE]
+  setnames(dt_subset, 
+           old=c("V1", cytokine_cols, "cells Count"),
+           new=c("well", names(cytokine_cols), "cell_count"))
+  
+  # Clean well IDs - extract just the well position (e.g., A1, B2)
+  dt_subset[, well := sub(".*-([A-Z][0-9]+) Well.*", "\\1", well)]
+  
+  # Melt to long format
+  dt_long <- melt(dt_subset, 
+                  id.vars=c("well", "cell_count"),
+                  variable.name="cytokine",
+                  value.name="freq")
+  
+  # Add gate_clean column in same format as other experiments
+  dt_long[, gate_clean := paste0(cytokine, "_pos")]
+  
+  # Process sample metadata
+  setnames(sample_metadata, "test/invivo", "test")
+  sample_metadata[, `:=`(
+    donor = case_when(
+      test == "V" ~ "D1V",
+      donor == 1 ~ "D1",
+      donor == 2 ~ "D2"
+    ),
+    car_name = car
+  )]
+  
+  # Map DRB5.CD28 to DRB528C
+  sample_metadata[car_name == "DRB5.CD28", car_name := "DRB528C"]
+  
+  # Create mapping from well to sample/donor
+  # First create a data.table with all well positions
+  wells <- CJ(row=LETTERS[1:nrow(plate_map)], col=1:ncol(plate_map))
+  wells[, well := paste0(row, col)]
+  
+  # Add sample numbers from plate map
+  wells[, sample := as.vector(t(as.matrix(plate_map)))]
+  
+  # Debug: Print wells before filtering
+  print("Wells before filtering:")
+  print(wells[well == "A11"])
+  
+  # Keep only numeric samples and convert to integer, but handle single-digit numbers
+  wells <- wells[!is.na(sample) & sample != ""]
+  wells[, sample := as.integer(gsub("^0+", "", sample))]
+  
+  # Debug: Print wells after filtering
+  print("Wells after filtering:")
+  print(wells[well == "A11"])
+  
+  # Merge well map with sample metadata
+  well_metadata <- merge(wells[, .(well, sample)], 
+                        sample_metadata[, .(number, donor, car_name)],
+                        by.x="sample", by.y="number", all.x=TRUE)
+  
+  # Debug: Print well metadata
+  print("Well metadata after merge:")
+  print(well_metadata[well == "A11"])
+  
+  # Merge metadata with data
+  dt_final <- merge(dt_long, well_metadata, by="well")
+  
+  # Debug: Print final data
+  print("Final data for A11:")
+  print(dt_final[well == "A11"])
+  
+  # Add experiment name for each donor
+  dt_final[, expt := paste0("TCSL247_", donor)]
+  
+  # Add required columns to match other experiments
+  dt_final[, `:=`(
+    CAR = car_name != "KO",  # Set CAR to FALSE for knockout controls
+    subset = "CD3"
+  )]
+  
+  # Save if output file specified
+  if (!is.null(output_file)) {
+    fwrite(dt_final, output_file)
+  }
+  
+  return(dt_final)
+}
+
 # Process all experiments
 if (interactive() || !exists('TESTING')) {
   # Process TCSL248 and TCSL250
@@ -249,6 +353,12 @@ if (interactive() || !exists('TESTING')) {
   df_241_242 <- process_241_242_data(
     here('data', 'raw', 'cytokine_secretion', 'tcsl241_242', '240311_cytokine_both_donors.csv'),
     here('data', 'processed', 'cytokine_secretion', 'tcsl241_242_processed.csv')
+  )
+  
+  # Process TCSL247
+  df_247 <- process_247_data(
+    here('data', 'raw', 'cytokine_secretion', 'tcsl247'),
+    here('data', 'processed', 'cytokine_secretion', 'tcsl247_processed.csv')
   )
 }
 

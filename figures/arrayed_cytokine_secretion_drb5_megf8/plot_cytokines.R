@@ -136,17 +136,28 @@ create_scatter_plot <- function(data, single_cytokines, title_suffix = "", show_
 
 # Load and prepare data
 df_241_242 <- fread(here("data", "processed", "cytokine_secretion", "tcsl241_242_processed.csv"))
+df_247 <- fread(here("data", "processed", "cytokine_secretion", "tcsl247_processed.csv"))
 df_248 <- fread(here("data", "processed", "cytokine_secretion", "tcsl248_processed.csv"))
 df_250 <- fread(here("data", "processed", "cytokine_secretion", "tcsl250_processed.csv"))
 
 # Combine all experiments data for single cytokine plots
 df_all_expts <- rbindlist(list(
-  df_241_242[, .(expt, car_name, variable, freq)],
+  df_241_242[, .(expt, car_name, variable = gate_clean, freq)],
+  df_247[gate_clean %in% c("IFNg_pos", "IL2_pos", "TNFa_pos"), {
+    # Standardize CAR names
+    car_name_std = car_name
+    car_name_std = ifelse(car_name == "zeta", "Zeta", car_name_std)
+    car_name_std = ifelse(car_name == "41BB", "TNR9", car_name_std)
+    .(expt, car_name = car_name_std, variable = gate_clean, freq)
+  }],
   df_248[gate_clean %in% c("IFNg_pos", "IL2_pos", "TNFa_pos") & subset == "CD3" & CAR == TRUE, 
-         .(expt = "TCSL248", car_name, variable = sub("_pos", "", gate_clean), freq)],
+         .(expt = "TCSL248", car_name, variable = gate_clean, freq)],
   df_250[gate_clean %in% c("IFNg_pos", "IL2_pos", "TNFa_pos") & subset == "CD3" & CAR == TRUE, 
-         .(expt = "TCSL250", car_name, variable = sub("_pos", "", gate_clean), freq)]
+         .(expt = "TCSL250", car_name, variable = gate_clean, freq)]
 ))
+
+# Filter out KO controls
+df_all_expts <- df_all_expts[car_name != "KO"]
 
 # Create combined plot for all experiments
 create_combined_plot <- function(df_plot, title_suffix = "") {
@@ -154,6 +165,9 @@ create_combined_plot <- function(df_plot, title_suffix = "") {
   expt_colors <- c(
     "TCSL241" = "#F8766D",  # red
     "TCSL242" = "#00BA38",  # green
+    "TCSL247_D1" = "#619CFF", # blue
+    "TCSL247_D2" = "#F564E3", # pink
+    "TCSL247_D1V" = "#B79F00", # yellow
     "TCSL248" = "#00BFC4",  # cyan
     "TCSL250" = "#C77CFF"   # purple
   )
@@ -165,6 +179,9 @@ create_combined_plot <- function(df_plot, title_suffix = "") {
   df_means[, rank := frank(freq, ties.method = "first"), by=.(expt, variable)]
   df_plot[df_means, rank := i.rank, on=.(expt, variable, car_name)]
   
+  # Get number of unique experiments for faceting
+  n_expts <- length(unique(df_plot$expt))
+  
   # Create plot
   p <- ggplot() +
     # Add small points for replicates
@@ -175,13 +192,17 @@ create_combined_plot <- function(df_plot, title_suffix = "") {
     geom_point(data = df_means,
                aes(x = reorder(car_name, rank), y = freq, color = expt),
                size = 3) +
-    facet_wrap(expt ~ variable, scales = "free", ncol = 3) +
+    facet_wrap(~ expt + variable, 
+               scales = "free_y", 
+               ncol = 3,
+               strip.position = "top") +
     theme_bw() +
     theme(
-      axis.text.x = element_text(angle = 45, hjust = 1),
       panel.grid.major.x = element_blank(),
       panel.grid.minor = element_blank(),
-      strip.text = element_text(color = "black")
+      panel.spacing = unit(0.5, "lines"),  # Reduce vertical spacing between facets
+      # Only show x-axis text for bottom row
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 8)
     ) +
     scale_color_manual(values = expt_colors) +
     labs(
@@ -206,60 +227,71 @@ chosen_gate <- c(
 
 single_cytokines <- c("IL2_pos", "TNFa_pos", "IFNg_pos")
 
-# Calculate common CARs across all experiments
-common_cars <- Reduce(intersect, list(
-  df_all_expts[expt == "TCSL241", unique(car_name)],
-  df_all_expts[expt == "TCSL242", unique(car_name)],
-  df_all_expts[expt == "TCSL248", unique(car_name)],
-  df_all_expts[expt == "TCSL250", unique(car_name)]
-))
+# Create three different plot versions
 
-# Prepare datasets for TCSL248/250
-df_combined <- rbind(
-  df_248[, expt := "TCSL248"],
-  df_250[, expt := "TCSL250"]
+# 1. Zeta, CD28, DRB5, TNR9 with TCSL241/242/248/250 (not 247)
+zeta_cars <- c("Zeta", "CD28", "DRB5", "TNR9", "MEGF8")
+plots[["all_experiments_with_zeta"]] <- create_combined_plot(
+  df_all_expts[car_name %in% zeta_cars & 
+               expt %in% c("TCSL241", "TCSL242", "TCSL248", "TCSL250")],
+  " (All experiments with Zeta)"
 )
 
-data_all <- prepare_data(df_combined)
-data_filtered <- prepare_data(df_combined, common_cars)
+# 2. CD28, DRB5, DRB528C, TNR9 with all TCSL247 donors and TCSL248/250
+drb528c_cars <- c("CD28", "DRB5", "DRB528C", "TNR9")
+plots[["tcsl247_248_250_with_drb528c"]] <- create_combined_plot(
+  df_all_expts[car_name %in% drb528c_cars & 
+               expt %in% c("TCSL247_D1", "TCSL247_D2", "TCSL248", "TCSL250")],
+  " (TCSL247/248/250 with DRB528C)"
+)
 
-# Create plots for TCSL248/250
-plots[["relative_cytokine_secretion"]] <- create_heatmap(data_all, chosen_gate, is_relative = TRUE)
-plots[["absolute_cytokine_secretion"]] <- create_heatmap(data_all, chosen_gate, is_relative = FALSE)
-plots[["individual_cytokines"]] <- create_scatter_plot(data_all, single_cytokines, show_replicates = TRUE)
+# 3. CD28, DRB5, TNR9 with all experiments and donors
+common_cars <- c("CD28", "DRB5", "TNR9")
+plots[["all_experiments_common_cars"]] <- create_combined_plot(
+  df_all_expts[car_name %in% common_cars & expt != 'TCSL247_D1V'],
+  " (All experiments, common CARs)"
+)
 
-# Filtered plots for TCSL248/250
-plots[["relative_cytokine_secretion_filtered"]] <- create_heatmap(data_filtered, chosen_gate, 
-                                                                is_relative = TRUE, " (Selected CARs)")
-plots[["absolute_cytokine_secretion_filtered"]] <- create_heatmap(data_filtered, chosen_gate, 
-                                                                is_relative = FALSE, " (Selected CARs)")
-plots[["individual_cytokines_filtered"]] <- create_scatter_plot(data_filtered, single_cytokines, 
-                                                             " (Selected CARs)", show_replicates = TRUE)
+# 3. All cars in TCSL248/250
+hidden_cars <- c("NEG", "POS", "")
+plots[["second_round_cars"]] <- create_combined_plot(
+  df_all_expts[expt %in% c("TCSL248", "TCSL250") & !(car_name %in% hidden_cars)],
+  " (TCSL248/250, all CARs)"
+)
 
-# Create filtered plot for all experiments
-plots[["all_experiments_cytokines_filtered"]] <- create_combined_plot(
-  df_all_expts[car_name %in% common_cars],
-  " (All experiments, selected CARs)"
+# 3. All cytokines in TCSL247/248
+hidden_cars <- c("NEG", "POS", "")
+plots[["first_round_cars"]] <- create_combined_plot(
+  df_all_expts[expt %in% c("TCSL241", "TCSL242") & !(car_name %in% hidden_cars)],
+  " (TCSL241/242, all CARs)"
 )
 
 # Save plots
 plot_dimensions <- list(
-  "relative_cytokine_secretion" = c(15, 7),
-  "absolute_cytokine_secretion" = c(15, 7),
-  "individual_cytokines" = c(12, 5),
-  "relative_cytokine_secretion_filtered" = c(15, 5),
-  "absolute_cytokine_secretion_filtered" = c(15, 5),
-  "individual_cytokines_filtered" = c(12, 5),
-  "all_experiments_cytokines_filtered" = c(12, 8)
+  "all_experiments_with_zeta" = c(15, 10),
+  "tcsl247_248_250_with_drb528c" = c(15, 10),
+  "all_experiments_common_cars" = c(15, 10),
+  "second_round_cars" = c(15, 10)
+
 )
 
-# Save all plots
+# Save each plot
 for (name in names(plots)) {
-  dims <- plot_dimensions[[name]]
-  ggsave(
-    filename = here("figures", "arrayed_cytokine_secretion_drb5_megf8", paste0(name, ".pdf")),
-    plot = plots[[name]],
-    width = dims[1],
-    height = dims[2]
-  )
+  if (name %in% names(plot_dimensions)) {
+    width <- plot_dimensions[[name]][1]
+    height <- plot_dimensions[[name]][2]
+    
+    fn <- here("figures", "arrayed_cytokine_secretion_drb5_megf8",
+                     paste0(name, ".pdf"))
+
+    ggsave(
+      filename = fn,
+      plot = plots[[name]],
+      width = width,
+      height = height
+    )
+
+    message(paste("Saved:\t", fn))
+  }
+
 } 

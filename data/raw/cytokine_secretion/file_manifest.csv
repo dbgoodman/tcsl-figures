@@ -1,5 +1,8 @@
 "experiment","file_type","source_path","dest_path"
 "tcsl241_242","aurora_combined","/Users/dbg/Library/CloudStorage/Box-Box/tcsl/flow/240311_tcsl_242_cytokine/240311_cytokine_both_donors.csv","/Users/dbg/code/tcsl-figures/data/raw/cytokine_secretion/tcsl241_242/240311_cytokine_both_donors.csv"
+"tcsl247","cytokine","/Users/dbg/Library/CloudStorage/Box-Box/tcsl/flow/20240528_tcsl247_invitro_cytokine/TCSL247 Cytokine Unmixed.csv","/Users/dbg/code/tcsl-figures/data/raw/cytokine_secretion/tcsl247/TCSL247 Cytokine Unmixed.csv"
+"tcsl247","plate_map","/Users/dbg/Library/CloudStorage/Box-Box/tcsl/flow/20240528_tcsl247_invitro_cytokine/plate_map.csv","/Users/dbg/code/tcsl-figures/data/raw/cytokine_secretion/tcsl247/plate_map.csv"
+"tcsl247","sample_metadata","/Users/dbg/Library/CloudStorage/Box-Box/tcsl/flow/20240528_tcsl247_invitro_cytokine/sample_metadata.csv","/Users/dbg/code/tcsl-figures/data/raw/cytokine_secretion/tcsl247/sample_metadata.csv"
 "tcsl248","cytokine","/Users/dbg/Library/CloudStorage/Box-Box/tcsl/flow/20241112_tcsl248_cytokine/241112_tcsl248_cytokine_TCSL248 Cytokine Unmixed.CSV","/Users/dbg/code/tcsl-figures/data/raw/cytokine_secretion/tcsl248/241112_tcsl248_cytokine_TCSL248 Cytokine Unmixed.CSV"
 "tcsl248","flowjo_export","/Users/dbg/Library/CloudStorage/Box-Box/tcsl/flow/20241112_tcsl248_cytokine/populations.csv","/Users/dbg/code/tcsl-figures/data/raw/cytokine_secretion/tcsl248/populations.csv"
 "tcsl248","plate_map","/Users/dbg/Library/CloudStorage/Box-Box/tcsl/flow/20241112_tcsl248_cytokine/plate_map.csv","/Users/dbg/code/tcsl-figures/data/raw/cytokine_secretion/tcsl248/plate_map.csv"
