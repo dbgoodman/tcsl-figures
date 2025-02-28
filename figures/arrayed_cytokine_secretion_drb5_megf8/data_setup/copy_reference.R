@@ -9,6 +9,7 @@ config <- load_config()
 
 # Define source files
 reference_files <- c(
+  tcsl241_242 = "flow/240311_tcsl_242_cytokine/cytokines.Rmd",
   tcsl248 = "flow/20241112_tcsl248_cytokine/cytokine_analysis.Rmd",
   tcsl250 = "flow/20241213.tcsl250 cytokines/cytokine_analysis.Rmd"
 )

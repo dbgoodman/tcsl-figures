@@ -24,6 +24,19 @@ Objective - to compare DRB5 and MEGF8 cytokine data across 4 experiments, TCSL24
 	raw csv: /Users/dbg/Library/CloudStorage/Box-Box/tcsl/flow/240311_tcsl_242_cytokine/240311_cytokine_both_donors.csv
 	R file: /Users/dbg/Library/CloudStorage/Box-Box/tcsl/flow/240311_tcsl_242_cytokine/cytokines.Rmd
 
+
+## tcsl247:
+	extra cells from tcsl245 in vivo, as a 3rd replicate, contains DRB5 and DRB528C, which is called DRB5.CD28 in this experiment. does not contain MEGF8. 
+	This experiment has two donors as well as a separate replicate of donor 1 called 1V which are the left over sorted in vivo cells. See the metadata file. I only have zeta for the extra in vivo cell set. 
+
+	- raw data from gating on the aurora
+	/Users/dbg/Library/CloudStorage/Box-Box/tcsl/flow/20240528_tcsl247_invitro_cytokine/TCSL247 Cytokine Unmixed.csv
+	- plate map
+	/Users/dbg/Library/CloudStorage/Box-Box/tcsl/flow/20240528_tcsl247_invitro_cytokine/plate_map.csv
+	- car name map
+	/Users/dbg/Library/CloudStorage/Box-Box/tcsl/flow/20240528_tcsl247_invitro_cytokine/sample_metadata.csv
+
+
 ## tcsl248: 
 
 	metadata and many files in:

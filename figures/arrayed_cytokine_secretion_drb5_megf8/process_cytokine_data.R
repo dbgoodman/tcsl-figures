@@ -5,6 +5,7 @@
 
 library(data.table)
 library(stringr)
+library(here)
 
 #' Process flow cytometry population data for a single experiment
 #' 
@@ -167,6 +168,88 @@ process_experiment_data <- function(experiment_dir, output_file = NULL) {
   }
   
   return(df_melt)
+}
+
+#' Process TCSL241/242 data which has a simpler format
+#' 
+#' @param input_file Path to the combined donor data CSV
+#' @param output_file Path to save the processed data
+#' @return Processed data.table in format compatible with other experiments
+process_241_242_data <- function(input_file, output_file = NULL) {
+  # Load data
+  dt <- fread(input_file)
+  
+  # Create mapping for consistent CAR names, using padded numbers
+  car_name_map <- c(
+    '01' = 'CD28',
+    '02' = 'TNR9',
+    '05' = 'Zeta',
+    '06' = 'MEGF8',
+    '12' = 'DRB5'
+  )
+  
+  # Process data
+  dt <- melt(dt, id.vars=c('donor', 'sample'))[
+    # Pad single digit numbers with 0
+    , sample := sprintf("%02d", as.numeric(sample))][
+    # Clean variable names and make consistent with 248/250
+    , variable := gsub('_pct', '', variable)][
+    , variable := dplyr::case_when(
+        variable == "ifng" ~ "IFNg",
+        variable == "tnfa" ~ "TNFa",
+        variable == "il2" ~ "IL2",
+        TRUE ~ variable
+    )][
+    # Convert to same format as 248/250
+    , gate_clean := paste0(variable, '_pos')
+  ]
+  
+  # Fix experiment names to be uppercase
+  dt[, expt := toupper(donor)]
+  
+  # Add CAR column and subset
+  dt[, `:=`(
+    CAR = TRUE,
+    subset = 'CD3',
+    car_name = sample
+  )]
+  
+  # Map CAR names to be consistent
+  dt[car_name %in% names(car_name_map), 
+     car_name := car_name_map[car_name]]
+  
+  # Remove unwanted samples and those not in the mapping
+  dt <- dt[car_name %in% car_name_map]
+  
+  # Rename columns to match 248/250 format
+  setnames(dt, 'value', 'freq')
+  
+  # Save if output file specified
+  if (!is.null(output_file)) {
+    fwrite(dt, output_file)
+  }
+  
+  return(dt)
+}
+
+# Process all experiments
+if (interactive() || !exists('TESTING')) {
+  # Process TCSL248 and TCSL250
+  df_248 <- process_experiment_data(
+    here('data', 'raw', 'cytokine_secretion', 'tcsl248'),
+    here('data', 'processed', 'cytokine_secretion', 'tcsl248_processed.csv')
+  )
+  
+  df_250 <- process_experiment_data(
+    here('data', 'raw', 'cytokine_secretion', 'tcsl250'),
+    here('data', 'processed', 'cytokine_secretion', 'tcsl250_processed.csv')
+  )
+  
+  # Process TCSL241/242
+  df_241_242 <- process_241_242_data(
+    here('data', 'raw', 'cytokine_secretion', 'tcsl241_242', '240311_cytokine_both_donors.csv'),
+    here('data', 'processed', 'cytokine_secretion', 'tcsl241_242_processed.csv')
+  )
 }
 
 # Example usage:

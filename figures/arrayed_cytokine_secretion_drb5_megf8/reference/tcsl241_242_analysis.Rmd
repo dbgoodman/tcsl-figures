@@ -1,0 +1,97 @@
+---
+title: "TCSL242_241_cytokine_ivt"
+output: html_notebook
+---
+
+
+```{r}
+library(data.table)
+
+cytokines_dt <- fread('/Users/dbg/Library/CloudStorage/Box-Box/tcsl/flow/240311_tcsl_242_cytokine/240311_cytokine_both_donors.csv')
+
+sample_labels <- c(
+    '01'='CD28', '02'='TNR9', '03'='CD2 shuffle', '04'='TNR9 shuffle',
+    '05'= 'CD3Z', '06'='MEGF8', '07'= 'OSTM1', '08'='CEAM3',
+    '09'='LRP5', '10'='FLT3', '11'='PCDGG', '12'='DRB5',
+    'Unt'='Unt', 'PMA/I'='PMA/Ionomycin')
+
+sample_labels <- data.table(
+  sample=names(sample_labels),
+  sample_label=sample_labels)[, sample := gsub('^0','',sample)]
+
+cytokines_dt <- melt(
+  cytokines_dt,
+  id.vars=c('donor','sample'))[, variable := gsub('_pct','',variable)]
+
+cytokines_dt <- merge(cytokines_dt, sample_labels, by='sample')
+cytokines_dt[, `:=`(
+    min_value=min(value), max_value=max(value), mean_value=mean(value)),
+  by=.(donor, variable, sample)]
+
+cytokines_dt[, val_rank := rank(rescale(value)), by=.(donor, variable)]
+
+make_cyto_plot <- function(variables=c('ifng','tnfa','il2'), donors=cytokines_dt[, unique(donor)]) {
+
+  plot <- ggplot(cytokines_dt[variable %in% variables & donor %in% donors & sample != 'PMA/I'], aes(
+        x=reorder(sample_label, value), color=donor)) + 
+      geom_linerange(aes(
+        ymin=min_value, ymax=max_value), position=position_dodge(width=0.5)) + 
+      geom_point(aes(
+        x=reorder(sample_label, rank(value)),
+        y=mean_value), position=position_dodge(width=0.5)) + 
+      facet_wrap(~variable, scales='free') +
+      coord_flip() +
+      labs(
+        x='12 Test CARs, ranked by mean cytokine production',
+        y='Cytokine production (%)',
+        color='Donor')
+  
+  return(plot)
+}
+
+make_cyto_plot(variables=c('il2','ifng'), donors='tcsl241')
+
+growth_killing_dt <- fread(
+  '/Users/dbg/Library/CloudStorage/Box-Box/tcsl/flow/240311_tcsl_242_rs1_count/rs1_growth_killing.csv')
+
+growth_killing_dt <- melt(
+  growth_killing_dt,
+  id.vars=c('sample','rep'))[
+    sample_labels, on='sample', nomatch=0]
+
+ggplot(growth_killing_dt[variable=='pct_killed']) + 
+  geom_point(aes(x=reorder(sample_label, value), y=value)) +
+  geom_hline(yintercept=0, linetype=2)
+
+ggplot(growth_killing_dt[variable=='fold_exp']) + 
+  geom_point(aes(x=reorder(sample_label, value), y=value)) +
+  geom_hline(yintercept=0, linetype=2)
+
+ggplot(growth_killing_dt[variable=='pct_killed']) + 
+  geom_point(aes(x=reorder(sample_label, value), y=value)) +
+  geom_hline(yintercept=0, linetype=2) +
+  coord_flip() + labs(y='Fraction K562s killed after RS1 (72 hrs, 1:1)', x='CAR, ranked')
+
+```
+
+### New figure for cytokines 2/2025
+
+```{r}
+ggplot(
+  cytokines_dt[
+    variable %in% c('il2','ifng','tnfa') & 
+    sample != 'PMA/I' & 
+    sample_label %in% c('CD3Z','DRB5','DRB528C','TNR9','MEGF8','CD28','Unt')], 
+    aes(x=reorder(sample_label, value), fill=donor)) + 
+  geom_col(aes(
+        x=reorder(sample_label, rank(value)),
+        y=mean_value), position=position_dodge(width=1)) + 
+      facet_wrap(~variable, scales='free') +
+      labs(
+        x='12 Test CARs, ranked by mean cytokine production',
+        y='Cytokine production (%)',
+        color='Donor') + 
+  geom_linerange(
+    aes(ymin=min_value, ymax=max_value), position=position_dodge(width=1)) + 
+  coord_flip()
+```
