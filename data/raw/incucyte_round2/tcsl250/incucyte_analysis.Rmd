@@ -1,0 +1,357 @@
+---
+title: "incucyte_analysis"
+output: html_document
+date: "2024-12-20"
+html_document:
+  toc: true
+  toc_float: true
+  number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+library(ggplot2)
+library(patchwork)
+library(stringr)
+library(ggrepel)
+
+parent.dir <- '/Users/dbg/Library/CloudStorage/Box-Box/tcsl/incucyte/TCSL250/'
+setwd(parent.dir)
+```
+
+## Data Loading
+```{r}
+
+#load incucyte data
+filepaths.dt <- data.table(
+  data.path=list.files(path=parent.dir, pattern='.+TCSL250.+txt', recursive=TRUE)
+)
+
+filepaths.dt[,
+  `:=`(
+    measurement = gsub('.+wk\\d_(\\w+)_(purified-)?r\\d+\\.txt', '\\1', data.path),
+    week = gsub('.+wk(\\d)_\\w+_(purified-)?r\\d+\\.txt', '\\1', data.path),
+    plate = gsub('.+wk\\d_\\w+_((purified-)?r\\d+)\\.txt', '\\1', data.path)
+  )]
+
+# Function to load and process a plate mapx
+load_plate_metadata <- function(plate_map_filepath, exclude_empty = TRUE, rows = LETTERS[1:8], columns = 12) {
+  # Load plate map
+  plate_map <- fread(plate_map_filepath, header = FALSE)
+  
+  # Truncate or pad rows
+  if (nrow(plate_map) > length(rows)) {
+    plate_map <- plate_map[1:length(rows), ]
+  } else if (nrow(plate_map) < length(rows)) {
+    plate_map <- rbind(plate_map, matrix(NA, nrow = length(rows) - nrow(plate_map), ncol = ncol(plate_map)))
+  }
+  
+  # Truncate or pad columns
+  if (ncol(plate_map) > columns) {
+    plate_map <- plate_map[, 1:columns, with = FALSE]
+  } else if (ncol(plate_map) < columns) {
+    plate_map <- cbind(plate_map, matrix(NA, nrow = nrow(plate_map), ncol = columns - ncol(plate_map)))
+  }
+  
+  # Add row labels
+  plate_map[, rn := rows[seq_len(nrow(plate_map))]]  # Add row names as a column
+  
+  # Set column names
+  setnames(plate_map, c(as.character(seq_len(columns)), "rn"))
+  
+  # Convert to long format
+  long_data <- melt(as.data.table(plate_map), id.vars = "rn", variable.name = "col", value.name = "name")
+  long_data[, `:=`(well = paste0(rn, col), row = rn, col = as.integer(col))]
+  
+  # Exclude empty wells if required
+  if (exclude_empty) {
+    long_data <- long_data[!is.na(name)]
+  }
+  
+  # Return the long format data
+  return(long_data[, .(well, row, col, name)])
+}
+
+# Load plate maps
+platemap.dt <- rbind(
+  load_plate_metadata("plate_map_r8.csv")[, week := 0][, plate := 'r8'],
+  load_plate_metadata("plate_map_r2.csv")[, week := 1][, plate := 'r2'],
+  #load_plate_metadata("plate_map_purified-r28.csv")[, week := 0][, plate := 'purified-r28'],
+  load_plate_metadata("plate_map_r24.csv")[, week := 0][, plate := 'r24'])
+
+# Split `name` column into `car_id` and `ratio` at the `.`
+platemap.dt[, c("car_id", "ratio") := tstrsplit(name, "\\.")]
+platemap.dt[car_id %in% c('U','K'), ratio := NA]
+
+load.single.measurement <- function(data.path) {
+  
+  data.dt <- fread(file.path(parent.dir, data.path))
+  data.dt <- data.dt[, 2:ncol(data.dt)]
+  data.melt.dt <- melt(data.dt, id.vars='Elapsed', variable.name='test', value.name='value')
+  data.melt.dt <- data.melt.dt[, c('well','image') := tstrsplit(test, ", Image")]
+  data.melt.dt[, value := as.numeric(value)]
+  return(data.melt.dt)
+  
+}
+
+combined.data.dt <- filepaths.dt[,
+  load.single.measurement(data.path), 
+  by=c('measurement','week','plate')]
+
+combined.data.dt <- merge(combined.data.dt[, week := as.numeric(week)], platemap.dt, by=c('well','week','plate'))
+
+
+car_map <- fread("/Users/dbg/Library/CloudStorage/Box-Box/tcsl/flow/20241116.tcsl248_wk1_repstim/car_map.csv")
+car_map[, car_id := factor(car_id)]
+car_map[, car_name := factor(car_name)]
+
+combined.data.dt <- car_map[combined.data.dt, on='car_id']
+combined.data.dt[is.na(car_name), car_name := car_id]
+combined.data.dt[, car_id := factor(car_id, levels=c(1:16,'U','K'))]
+
+# separate purified plate
+combined.data.dt[plate == 'purified-r28', ratio := paste0('p.', ratio)]
+
+```
+
+## Normalization
+
+```{r}
+
+combined.data.dt[, value_norm := value/(value[Elapsed == 0]+0.001), 
+  by=c('well','measurement', 'week','plate')]
+combined.data.dt[, mean_value_norm := mean(value_norm),
+  by=c('ratio','car_name','Elapsed','measurement','week','plate')]
+combined.data.dt[, std_dev := sd(value_norm),
+  by=c('ratio','car_name','Elapsed','measurement','week','plate')]
+combined.data.dt[, std_error := std_dev/sqrt(.N),
+  by=c('ratio','car_name','Elapsed','measurement','week','plate')]
+
+combined.data.dt[week == 0, ctrl_val := mean(mean_value_norm[car_name == 'U']), by=c('Elapsed','measurement')]
+combined.data.dt[week == 1, ctrl_val := mean(mean_value_norm[car_name == 'K']), by=c('Elapsed','measurement')]
+
+# add normalization to no T cells
+combined.data.dt[, mean_value_none := mean_value_norm/ctrl_val,
+  by=c('Elapsed','measurement','week','plate')]
+combined.data.dt[, value_none := value_norm/ctrl_val,
+  by=c('ratio','Elapsed','measurement','week')]
+combined.data.dt[, std_dev_value_none := sd(value_none),
+  by=c('ratio','car_name','Elapsed','measurement','week')]
+combined.data.dt[, std_err_value_none := std_dev_value_none/sqrt(.N),
+  by=c('ratio','car_name','Elapsed','measurement','week')]
+combined.data.dt[, std_dev_value_none_log := sd(log(value_none)),
+  by=c('ratio','car_name','Elapsed','measurement','week')]
+combined.data.dt[, std_err_value_none_log := std_dev_value_none_log/sqrt(.N),
+  by=c('ratio','car_name','Elapsed','measurement','week')]
+```
+
+## Plots Week 1 (intensity)
+
+```{r, fig.width=10, fig.height=7.5}
+
+wk0_data <- combined.data.dt[plate != 'purified-r28' & measurement == 'incucyte_total_int_intensity' & value > 0 & Elapsed < 100 & week == 0]
+
+ggplot(wk0_data) +
+  geom_line(aes(x=Elapsed, y=value, group=well)) + 
+  facet_grid(row~plate+col, switch = 'y')
+
+ggplot(wk0_data) +
+  geom_line(aes(x=Elapsed, y=value_norm, group=well)) + 
+  facet_grid(ratio~car_id)
+
+ggplot(wk0_data) +
+  geom_line(aes(x=Elapsed, y=value_norm, group=interaction(well, plate), color=ratio)) + 
+  facet_grid(~car_name)
+
+ggplot(wk0_data) + geom_line(aes(x=Elapsed, y=mean_value_norm, group=interaction(well, plate), color=ratio)) + 
+  facet_grid(~car_name)
+
+last_points <- unique(wk0_data[!(car_name %in% c('K','U'))][,
+  .SD[which.max(Elapsed), .(mean_value_none, Elapsed)], by = .(car_name, ratio)])
+
+ggplot(wk0_data[!(car_name %in% c('K','U'))]) + 
+  geom_line(aes(x=Elapsed, y=mean_value_none, group=well, color=car_name)) + 
+  geom_text_repel(data = last_points, 
+    aes(x = Elapsed, y = mean_value_none, label = car_name, color = car_name),
+    hjust = 0,  # Align the text to the right of the data point
+    nudge_x = 5,  # Move labels to the right
+    direction = "y",  # Allow movement only in the vertical direction to prevent overlap
+    segment.size = 0.5,  # Set segment size for the connecting line
+    segment.linetype = "dotted",  # Make the line dotted
+    segment.colour = "black",  # Set the line color to black    
+    box.padding = 0.4,  # Add some space around the label for readability
+    force = 2,  # Increase force to reduce overlapping labels
+    max.overlaps = Inf,  # Allow as many labels as possible to show
+    size = 2.5) +  # Adjust text size as needed
+  scale_x_continuous(expand = expansion(mult = c(0.05, 0.20))) +  # Add more space to the right of the plot
+  facet_grid(~ratio, labeller=labeller(ratio= function(x) paste0(x, " A549 cells : 1 CAR-T cell"))) +
+  theme_minimal() +
+  # add boxes around panels:
+  theme(panel.border = element_rect(colour = "black", fill = NA, size = 1)) +
+  labs(title='Week 1 Incucyte Killing',
+    x='Elapsed Time (hours)', y='Fraction Cells Remaining\n(via normalized intensity vs no T cells)')
+
+last_values <- unique(
+  combined.data.dt[
+    !is.na(ratio) & measurement == 'incucyte_total_int_intensity' & value > 0 & 
+      Elapsed == 64 & week == 0][, 
+        .(mean_value_none, ratio, car_name)])
+
+ggplot(last_values) + geom_point(aes(
+  x=ratio, y=mean_value_none, color=car_name)) + 
+  geom_line(aes(x=ratio, y=mean_value_none, color=car_name, group=car_name)) + 
+  geom_text_repel(data = last_values[ratio == 8], 
+    aes(x = 3, y = mean_value_none, label = car_name, color = car_name),
+    hjust = 0,  # Align the text to the right of the data point
+    nudge_x = 0.25,  # Move labels to the right
+    direction = "y",  # Allow movement only in the vertical direction to prevent overlap
+    segment.size = 0.5,  # Set segment size for the connecting line
+    segment.linetype = "dotted",  # Make the line dotted
+    segment.colour = "black",  # Set the line color to black    
+    box.padding = 0.4,  # Add some space around the label for readability
+    force = 2,  # Increase force to reduce overlapping labels
+    max.overlaps = Inf,  # Allow as many labels as possible to show
+    size = 4) +
+  labs(x='Target:Effector Ratio', y='Fraction Cells Remaining at ~2.5D') +
+  theme_minimal() +
+  theme(panel.border = element_rect(colour = "black", fill = NA, size = 1))
+```
+
+## Plots Week 1 (area)
+
+```{r, fig.width=10, fig.height=7.5}
+
+wk0_data <- combined.data.dt[measurement == 'incucyte_total_area' & value > 0 & Elapsed < 80 & week == 0]
+
+ggplot(wk0_data) +
+  geom_line(aes(x=Elapsed, y=value, group=well)) + 
+  facet_grid(row~col, switch = 'y')
+
+ggplot(wk0_data) +
+  geom_line(aes(x=Elapsed, y=value_norm, group=well)) + 
+  facet_grid(ratio~car_id)
+
+ggplot(wk0_data) +
+  geom_line(aes(x=Elapsed, y=value_norm, group=well, color=ratio)) + 
+  facet_grid(~car_name)
+
+ggplot(wk0_data) + geom_line(aes(x=Elapsed, y=mean_value_norm, group=well, color=ratio)) + 
+  facet_grid(~car_name)
+
+last_points <- unique(wk0_data[!(car_name %in% c('K','U'))][,
+  .SD[which.max(Elapsed), .(mean_value_none, Elapsed)], by = .(car_name, ratio)])
+
+ggplot(wk0_data[!(car_name %in% c('K','U'))]) + 
+  geom_line(aes(x=Elapsed, y=mean_value_none, group=well, color=car_name)) + 
+  geom_text_repel(data = last_points, 
+    aes(x = Elapsed, y = mean_value_none, label = car_name, color = car_name),
+    hjust = 0,  # Align the text to the right of the data point
+    nudge_x = 5,  # Move labels to the right
+    direction = "y",  # Allow movement only in the vertical direction to prevent overlap
+    segment.size = 0.5,  # Set segment size for the connecting line
+    segment.linetype = "dotted",  # Make the line dotted
+    segment.colour = "black",  # Set the line color to black    
+    box.padding = 0.4,  # Add some space around the label for readability
+    force = 2,  # Increase force to reduce overlapping labels
+    max.overlaps = Inf,  # Allow as many labels as possible to show
+    size = 2.5) +  # Adjust text size as needed
+  scale_x_continuous(expand = expansion(mult = c(0.05, 0.20))) +  # Add more space to the right of the plot
+  facet_grid(~ratio)
+```
+
+
+## Plots Week 2 (intensity)
+
+```{r, fig.width=10, fig.height=7.5}
+
+wk1_data <- combined.data.dt[measurement == 'incucyte_total_int_intensity' & value > 0 & Elapsed < 144 & week == 1]
+
+ggplot(wk1_data) +
+  geom_line(aes(x=Elapsed, y=value, group=well)) + 
+  facet_grid(row~col, switch = 'y')
+
+ggplot(wk1_data) +
+  geom_line(aes(x=Elapsed, y=value_norm, group=well)) + 
+  facet_grid(ratio~car_id)
+
+ggplot(wk1_data) +
+  geom_line(aes(x=Elapsed, y=value_norm, group=well, color=ratio)) + 
+  facet_grid(~car_name)
+
+ggplot(wk1_data) + geom_line(aes(x=Elapsed, y=mean_value_norm, group=well, color=ratio)) + 
+  facet_grid(~car_name)
+
+last_points <- unique(wk1_data[!(car_name %in% c('K','U'))][,
+  .SD[which.max(Elapsed), .(mean_value_none, Elapsed)], by = .(car_name, ratio)])
+
+ggplot(wk1_data[!(car_name %in% c('K','U'))]) + 
+  geom_line(aes(x=Elapsed, y=mean_value_none, group=well, color=car_name)) + 
+  geom_text_repel(data = last_points, 
+    aes(x = Elapsed, y = mean_value_none, label = car_name, color = car_name),
+    hjust = 0,  # Align the text to the right of the data point
+    nudge_x = 5,  # Move labels to the right
+    direction = "y",  # Allow movement only in the vertical direction to prevent overlap
+    segment.size = 0.5,  # Set segment size for the connecting line
+    segment.linetype = "dotted",  # Make the line dotted
+    segment.colour = "black",  # Set the line color to black    
+    box.padding = 0.4,  # Add some space around the label for readability
+    force = 2,  # Increase force to reduce overlapping labels
+    max.overlaps = Inf,  # Allow as many labels as possible to show
+    size = 2.5) +  # Adjust text size as needed
+  scale_x_continuous(expand = expansion(mult = c(0.05, 0.20))) +  # Add more space to the right of the plot
+  theme_minimal() +
+  theme(panel.border = element_rect(colour = "black", fill = NA, size = 1)) +
+  labs(title='Week 2 Incucyte Killing',
+    x='Elapsed Time (hours)', y='Fraction Cells Remaining\n(via normalized intensity vs no T cells)')
+```
+
+## Plots Week 2 (area)
+
+```{r, fig.width=10, fig.height=7.5}
+
+wk1_data <- combined.data.dt[measurement == 'incucyte_total_area' & value > 0 & Elapsed < 144 & week == 1]
+
+ggplot(wk1_data) +
+  geom_line(aes(x=Elapsed, y=value, group=well)) + 
+  facet_grid(row~col, switch = 'y')
+
+ggplot(wk1_data) +
+  geom_line(aes(x=Elapsed, y=value_norm, group=well)) + 
+  facet_grid(ratio~car_id)
+
+ggplot(wk1_data) +
+  geom_line(aes(x=Elapsed, y=value_norm, group=well, color=ratio)) + 
+  facet_grid(~car_name)
+
+ggplot(wk1_data) + geom_line(aes(x=Elapsed, y=mean_value_norm, group=well, color=ratio)) + 
+  facet_grid(~car_name)
+
+last_points <- unique(wk1_data[!(car_name %in% c('K','U'))][,
+  .SD[which.max(Elapsed), .(mean_value_none, Elapsed)], by = .(car_name, ratio)])
+
+ggplot(wk1_data[!(car_name %in% c('K','U'))]) + 
+  geom_line(aes(x=Elapsed, y=mean_value_none, group=well, color=car_name)) + 
+  geom_text_repel(data = last_points, 
+    aes(x = Elapsed, y = mean_value_none, label = car_name, color = car_name),
+    hjust = 0,  # Align the text to the right of the data point
+    nudge_x = 5,  # Move labels to the right
+    direction = "y",  # Allow movement only in the vertical direction to prevent overlap
+    segment.size = 0.5,  # Set segment size for the connecting line
+    segment.linetype = "dotted",  # Make the line dotted
+    segment.colour = "black",  # Set the line color to black    
+    box.padding = 0.4,  # Add some space around the label for readability
+    force = 2,  # Increase force to reduce overlapping labels
+    max.overlaps = Inf,  # Allow as many labels as possible to show
+    size = 2.5)  +  # Adjust text size as needed
+  scale_x_continuous(expand = expansion(mult = c(0.05, 0.20))) +  # Add more space to the right of the plot
+  facet_grid(~ratio, labeller=labeller(ratio= function(x) paste0(x, " A549 cells : 1 CAR-T cell"))) +
+  theme_minimal() +
+  # add boxes around panels:
+  theme(panel.border = element_rect(colour = "black", fill = NA, size = 1)) +
+  labs(title='Week 1 Incucyte Killing',
+    x='Elapsed Time (hours)', y='Fraction Cells Remaining\n(via normalized intensity vs no T cells)')
+```
+
+
+
