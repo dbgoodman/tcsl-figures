@@ -122,15 +122,16 @@ process_tcsl248 <- function() {
     iqr_value = IQR(value, na.rm = TRUE)
   ), by = .(well, measurement, week)]
   
-  # Define outlier threshold (e.g., 5 times IQR from median)
+  # Define outlier threshold - using a much more lenient threshold (10 times IQR instead of 5)
   combined.data.dt[, `:=`(
-    lower_bound = median_value - 5 * iqr_value,
-    upper_bound = median_value + 5 * iqr_value
+    lower_bound = median_value - 30 * iqr_value,
+    upper_bound = median_value + 30 * iqr_value
   )]
-  
-  # Flag outliers
+
+  # Flag outliers, but NEVER flag Elapsed == 0 values
   combined.data.dt[, is_outlier := value < lower_bound | value > upper_bound]
-  
+  combined.data.dt[Elapsed == 0, is_outlier := FALSE]  # Protect Elapsed == 0 values
+
   # Replace outliers with NA
   combined.data.dt[is_outlier == TRUE, value := NA]
   
@@ -251,14 +252,15 @@ process_tcsl250 <- function() {
     iqr_value = IQR(value, na.rm = TRUE)
   ), by = .(well, measurement, week, plate)]
   
-  # Define outlier threshold (e.g., 5 times IQR from median)
+  # Define outlier threshold - using a much more lenient threshold (10 times IQR instead of 5)
   combined.data.dt[, `:=`(
-    lower_bound = median_value - 5 * iqr_value,
-    upper_bound = median_value + 5 * iqr_value
+    lower_bound = median_value - 30 * iqr_value,
+    upper_bound = median_value + 30 * iqr_value
   )]
   
-  # Flag outliers
+  # Flag outliers, but NEVER flag Elapsed == 0 values
   combined.data.dt[, is_outlier := value < lower_bound | value > upper_bound]
+  combined.data.dt[Elapsed == 0, is_outlier := FALSE]  # Protect Elapsed == 0 values
   
   # Replace outliers with NA
   combined.data.dt[is_outlier == TRUE, value := NA]

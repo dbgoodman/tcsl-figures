@@ -1,0 +1,101 @@
+[2025-03-03 21:16:32] Starting TCSL250 processing script
+[2025-03-03 21:16:32] Sourcing processing function
+[2025-03-03 21:16:32] Sourcing plotting function
+[2025-03-03 21:16:32] Processing TCSL250 data with error handling
+[2025-03-03 21:16:32] Data directory: /Users/dbg/code/tcsl-figures/data/raw/flowpanel_round2/tcsl250
+[2025-03-03 21:16:32] Files in directory: car_map.csv, plate_map_1.csv, plate_map_2.csv, populations.csv
+[2025-03-03 21:16:32] Starting data processing
+[2025-03-03 21:16:32] Loading raw data from populations.csv
+[2025-03-03 21:16:32] Raw data dimensions: 92x111
+[2025-03-03 21:16:32] Filtering for .fcs files
+[2025-03-03 21:16:32] After filtering, rows: 90
+[2025-03-03 21:16:32] Extracting plate and well information
+[2025-03-03 21:16:32] Processing data with process_flow_data function
+[2025-03-03 22:20:39] Starting TCSL250 processing script
+[2025-03-03 22:20:39] Sourcing processing function
+[2025-03-03 22:20:40] Sourcing plotting function
+[2025-03-03 22:20:40] Creating replicate metadata for TCSL250
+[2025-03-03 22:20:40] Processing TCSL250 data with error handling
+[2025-03-03 22:20:40] Data directory: /Users/dbg/code/tcsl-figures/data/raw/flowpanel_round2/tcsl250
+[2025-03-03 22:20:40] Files in directory: car_map.csv, plate_map_1.csv, plate_map_2.csv, populations.csv
+[2025-03-03 22:20:40] Starting data processing
+[2025-03-03 22:20:40] Processed data saved to /Users/dbg/code/tcsl-figures/data/processed/flowpanel_round2/tcsl250_processed.rds
+[2025-03-03 22:20:40] Processed data dimensions: 12060x25
+[2025-03-03 22:20:40] Bead count file not found: /Users/dbg/code/tcsl-figures/data/raw/flowpanel_round2/tcsl250/bead_count.csv
+[2025-03-03 22:20:40] Generating plots with error handling
+[2025-03-03 22:20:40] Calling save_all_plots function
+[2025-03-03 22:20:44] All plots saved successfully
+[2025-03-03 22:20:44] TCSL250 processing and plotting complete!
+[2025-03-03 22:31:13] Starting TCSL250 processing script
+[2025-03-03 22:31:13] Sourcing processing function
+[2025-03-03 22:31:14] Sourcing plotting function
+[2025-03-03 22:31:14] Creating replicate metadata for TCSL250
+[2025-03-03 22:31:14] Processing TCSL250 data with error handling
+[2025-03-03 22:31:14] Data directory: /Users/dbg/code/tcsl-figures/data/raw/flowpanel_round2/tcsl250
+[2025-03-03 22:31:14] Files in directory: car_map.csv, plate_map_1.csv, plate_map_2.csv, populations.csv
+[2025-03-03 22:31:14] Starting data processing
+[2025-03-03 22:31:14] Processed data saved to /Users/dbg/code/tcsl-figures/data/processed/flowpanel_round2/tcsl250_processed.rds
+[2025-03-03 22:31:14] Processed data dimensions: 12060x25
+[2025-03-03 22:31:14] Bead count file not found: /Users/dbg/code/tcsl-figures/data/raw/flowpanel_round2/tcsl250/bead_count.csv
+[2025-03-03 22:31:14] Generating plots with error handling
+[2025-03-03 22:31:14] Calling save_all_plots function
+[2025-03-03 22:31:18] All plots saved successfully
+[2025-03-03 22:31:18] TCSL250 processing and plotting complete!
+[2025-03-03 22:37:57] Starting TCSL250 processing script
+[2025-03-03 22:37:57] Sourcing processing function
+[2025-03-03 22:37:58] Sourcing plotting function
+[2025-03-03 22:37:58] Creating replicate metadata for TCSL250
+[2025-03-03 22:37:58] Processing TCSL250 data with error handling
+[2025-03-03 22:37:58] Data directory: /Users/dbg/code/tcsl-figures/data/raw/flowpanel_round2/tcsl250
+[2025-03-03 22:37:58] Files in directory: car_map.csv, plate_map_1.csv, plate_map_2.csv, populations.csv
+[2025-03-03 22:37:58] Starting data processing
+[2025-03-03 22:37:58] Processed data saved to /Users/dbg/code/tcsl-figures/data/processed/flowpanel_round2/tcsl250_processed.rds
+[2025-03-03 22:37:58] Processed data dimensions: 12060x25
+[2025-03-03 22:37:58] Bead count file not found: /Users/dbg/code/tcsl-figures/data/raw/flowpanel_round2/tcsl250/bead_count.csv
+[2025-03-03 22:37:58] Generating plots with error handling
+[2025-03-03 22:37:58] Calling save_all_plots function
+[2025-03-03 22:38:02] All plots saved successfully
+[2025-03-03 22:38:02] TCSL250 processing and plotting complete!
+[2025-03-04 01:16:11] Starting TCSL250 processing script
+[2025-03-04 01:16:11] Sourcing processing function
+[2025-03-04 01:16:11] Sourcing plotting function
+[2025-03-04 01:16:11] Creating replicate metadata for TCSL250
+[2025-03-04 01:16:11] Processing TCSL250 data with error handling
+[2025-03-04 01:16:11] Data directory: /Users/dbg/code/tcsl-figures/data/raw/flowpanel_round2/tcsl250
+[2025-03-04 01:16:11] Files in directory: car_map.csv, plate_map_1.csv, plate_map_2.csv, populations.csv
+[2025-03-04 01:16:11] Starting data processing
+[2025-03-04 01:16:12] Processed data saved to /Users/dbg/code/tcsl-figures/data/processed/flowpanel_round2/tcsl250_processed.rds
+[2025-03-04 01:16:12] Processed data dimensions: 12060x25
+[2025-03-04 01:16:12] Bead count file not found: /Users/dbg/code/tcsl-figures/data/raw/flowpanel_round2/tcsl250/bead_count.csv
+[2025-03-04 01:16:12] Generating plots with error handling
+[2025-03-04 01:16:12] Calling save_all_plots function
+[2025-03-04 01:16:16] All plots saved successfully
+[2025-03-04 01:16:16] TCSL250 processing and plotting complete!
+[2025-03-04 01:19:02] Starting TCSL250 processing script
+[2025-03-04 01:19:02] Sourcing processing function
+[2025-03-04 01:19:02] Sourcing plotting function
+[2025-03-04 01:19:02] Creating replicate metadata for TCSL250
+[2025-03-04 01:19:02] Processing TCSL250 data with error handling
+[2025-03-04 01:19:02] Data directory: /Users/dbg/code/tcsl-figures/data/raw/flowpanel_round2/tcsl250
+[2025-03-04 01:19:02] Files in directory: car_map.csv, plate_map_1.csv, plate_map_2.csv, populations.csv
+[2025-03-04 01:19:02] Starting data processing
+[2025-03-04 01:19:02] Processed data saved to /Users/dbg/code/tcsl-figures/data/processed/flowpanel_round2/tcsl250_processed.rds
+[2025-03-04 01:19:02] Processed data dimensions: 12060x25
+[2025-03-04 01:19:02] Bead count file not found: /Users/dbg/code/tcsl-figures/data/raw/flowpanel_round2/tcsl250/bead_count.csv
+[2025-03-04 01:19:02] Generating plots with error handling
+[2025-03-04 01:19:02] Calling save_all_plots function
+[2025-03-04 01:19:07] All plots saved successfully
+[2025-03-04 01:19:07] TCSL250 processing and plotting complete!
+[2025-03-04 01:44:06] Starting TCSL250 processing script
+[2025-03-04 01:44:06] Sourcing processing function
+[2025-03-04 01:44:06] Sourcing plotting function
+[2025-03-04 01:44:06] Creating replicate metadata for TCSL250
+[2025-03-04 01:44:06] Processing TCSL250 data with error handling
+[2025-03-04 01:44:06] Data directory: /Users/dbg/code/tcsl-figures/data/raw/flowpanel_round2/tcsl250
+[2025-03-04 01:44:06] Files in directory: car_map.csv, plate_map_1.csv, plate_map_2.csv, populations.csv
+[2025-03-04 01:44:06] Starting data processing
+[2025-03-04 01:44:07] Processed data saved to /Users/dbg/code/tcsl-figures/data/processed/flowpanel_round2/tcsl250_processed.rds
+[2025-03-04 01:44:07] Processed data dimensions: 12060x25
+[2025-03-04 01:44:07] Bead count file not found: /Users/dbg/code/tcsl-figures/data/raw/flowpanel_round2/tcsl250/bead_count.csv
+[2025-03-04 01:44:07] Generating plots with error handling
+[2025-03-04 01:44:07] Calling save_all_plots function

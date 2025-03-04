@@ -1,0 +1,133 @@
+[2025-03-03 21:15:10] Starting minimal TCSL250 processing script
+[2025-03-03 21:15:10] Sourcing processing function
+[2025-03-03 21:15:11] Processing TCSL250 data with detailed logging
+[2025-03-03 21:15:11] Data directory: /Users/dbg/code/tcsl-figures/data/raw/flowpanel_round2/tcsl250
+[2025-03-03 21:15:11] Files in directory: car_map.csv, plate_map_1.csv, plate_map_2.csv, populations.csv
+[2025-03-03 21:15:11] Loading raw data from populations.csv
+[2025-03-03 21:15:11] Raw data dimensions: 92x111
+[2025-03-03 21:15:11] Raw data column names: V1, Lymphocytes | Freq. of Parent (%), Lymphocytes | Count, beads | Count, beads | Freq. of Parent (%), Lymphocytes/Single Cells/Single Cells/Live CAR | Freq. of Lymphocytes (%), Lymphocytes/Single Cells/Single Cells/Live CAR/CD4 | Freq. of Parent (%), Lymphocytes/Single Cells/Single Cells/Live CAR/CD8 | Freq. of Parent (%), Lymphocytes/Single Cells/Single Cells/Live CAR/CD4 | Freq. of Parent (%), Lymphocytes/Single Cells/Single Cells/Live CAR/CD4 | Geometric Mean (CD39) ...
+[2025-03-03 21:15:11] Filtering for .fcs files
+[2025-03-03 21:15:11] After filtering, rows: 90
+[2025-03-03 21:15:11] Extracting plate and well information
+[2025-03-03 21:15:11] Plate and well extraction complete
+[2025-03-03 21:15:11] Removing unneeded columns
+[2025-03-03 21:15:11] V columns to remove: V1, V111
+[2025-03-03 21:15:11] After removing V columns, dimensions: 90x111
+[2025-03-03 21:15:11] Melting data.table
+[2025-03-03 21:15:11] ID variables for melting: plate, well
+[2025-03-03 21:15:11] Measure variables count: 109
+[2025-03-03 21:15:11] Starting melt operation
+[2025-03-03 21:15:11] Melt operation completed successfully
+[2025-03-03 21:15:11] Melted data dimensions: 9630x4
+[2025-03-03 21:15:11] Saving melted data for inspection
+[2025-03-03 21:15:11] Removing freq parent from live car
+[2025-03-03 21:15:11] After removing freq parent, rows: 9630
+[2025-03-03 21:15:11] Extracting columns from gate_str
+[2025-03-03 21:15:11] Processing measure column
+[2025-03-03 21:15:11] Processing MFI measures
+[2025-03-03 21:15:11] Saving intermediate result after column extraction
+[2025-03-03 21:15:11] Adjusting parent gates
+[2025-03-03 21:15:11] After adjusting parent gates, rows: 9630
+[2025-03-03 21:15:11] Adding CAR status
+[2025-03-03 21:15:11] Adding CD4/CD8 status
+[2025-03-03 21:15:11] Setting parent subset and CAR status
+[2025-03-03 21:15:11] Saving intermediate result after adding status fields
+[2025-03-03 21:15:11] Separating freq and count with dcast
+[2025-03-03 21:15:11] Unique measures: freq, count, gmean_mfi, mean_mfi
+[2025-03-03 21:15:11] Starting dcast operation
+[2025-03-03 21:15:11] Dcast operation completed successfully
+[2025-03-03 21:15:11] After dcast, dimensions: 9630x14
+[2025-03-03 21:15:11] Saving intermediate result after dcast
+[2025-03-03 21:15:11] Removing count/freq from gate_str
+[2025-03-03 21:15:11] Consolidating separate freq/count rows
+[2025-03-03 21:15:11] After consolidation, rows: 9630
+[2025-03-03 21:15:11] Setting NA freq to 0 and converting columns to numeric
+[2025-03-03 21:15:11] Saving intermediate result after numeric conversion
+[2025-03-03 21:15:11] Propagating counts iteratively
+[2025-03-03 21:15:11] Count propagation iteration: 1
+[2025-03-03 21:15:11] New counts to propagate: 180
+[2025-03-03 21:15:11] Count propagation iteration: 2
+[2025-03-03 21:15:11] New counts to propagate: 180
+[2025-03-03 21:15:11] Count propagation iteration: 3
+[2025-03-03 21:15:11] New counts to propagate: 4500
+[2025-03-03 21:15:11] Count propagation iteration: 4
+[2025-03-03 21:15:11] No new counts to propagate, breaking loop
+[2025-03-03 21:15:11] Count propagation complete after 4 iterations
+[2025-03-03 21:15:11] NA count values remaining: 4500
+[2025-03-03 21:15:11] Saving intermediate result after count propagation
+[2025-03-03 21:15:11] Cleaning gate names
+[2025-03-03 21:15:11] Renaming memory subsets
+[2025-03-03 21:15:11] Calculating count per bead
+[2025-03-03 21:15:11] Saving intermediate result after gate cleaning
+[2025-03-03 21:15:11] Adjusting replicate labels for TCSL250
+[2025-03-03 21:16:23] Starting minimal TCSL250 processing script
+[2025-03-03 21:16:23] Sourcing processing function
+[2025-03-03 21:16:24] Processing TCSL250 data with detailed logging
+[2025-03-03 21:16:24] Data directory: /Users/dbg/code/tcsl-figures/data/raw/flowpanel_round2/tcsl250
+[2025-03-03 21:16:24] Files in directory: car_map.csv, plate_map_1.csv, plate_map_2.csv, populations.csv
+[2025-03-03 21:16:24] Loading raw data from populations.csv
+[2025-03-03 21:16:24] Raw data dimensions: 92x111
+[2025-03-03 21:16:24] Raw data column names: V1, Lymphocytes | Freq. of Parent (%), Lymphocytes | Count, beads | Count, beads | Freq. of Parent (%), Lymphocytes/Single Cells/Single Cells/Live CAR | Freq. of Lymphocytes (%), Lymphocytes/Single Cells/Single Cells/Live CAR/CD4 | Freq. of Parent (%), Lymphocytes/Single Cells/Single Cells/Live CAR/CD8 | Freq. of Parent (%), Lymphocytes/Single Cells/Single Cells/Live CAR/CD4 | Freq. of Parent (%), Lymphocytes/Single Cells/Single Cells/Live CAR/CD4 | Geometric Mean (CD39) ...
+[2025-03-03 21:16:24] Filtering for .fcs files
+[2025-03-03 21:16:24] After filtering, rows: 90
+[2025-03-03 21:16:24] Extracting plate and well information
+[2025-03-03 21:16:24] Plate and well extraction complete
+[2025-03-03 21:16:24] Removing unneeded columns
+[2025-03-03 21:16:24] V columns to remove: V1, V111
+[2025-03-03 21:16:24] After removing V columns, dimensions: 90x111
+[2025-03-03 21:16:24] Melting data.table
+[2025-03-03 21:16:24] ID variables for melting: plate, well
+[2025-03-03 21:16:24] Measure variables count: 109
+[2025-03-03 21:16:24] Starting melt operation
+[2025-03-03 21:16:24] Melt operation completed successfully
+[2025-03-03 21:16:24] Melted data dimensions: 9630x4
+[2025-03-03 21:16:24] Saving melted data for inspection
+[2025-03-03 21:16:24] Removing freq parent from live car
+[2025-03-03 21:16:24] After removing freq parent, rows: 9630
+[2025-03-03 21:16:24] Extracting columns from gate_str
+[2025-03-03 21:16:24] Processing measure column
+[2025-03-03 21:16:24] Processing MFI measures
+[2025-03-03 21:16:24] Saving intermediate result after column extraction
+[2025-03-03 21:16:24] Adjusting parent gates
+[2025-03-03 21:16:24] After adjusting parent gates, rows: 9630
+[2025-03-03 21:16:24] Adding CAR status
+[2025-03-03 21:16:24] Adding CD4/CD8 status
+[2025-03-03 21:16:24] Setting parent subset and CAR status
+[2025-03-03 21:16:24] Saving intermediate result after adding status fields
+[2025-03-03 21:16:24] Separating freq and count with dcast
+[2025-03-03 21:16:24] Unique measures: freq, count, gmean_mfi, mean_mfi
+[2025-03-03 21:16:24] Starting dcast operation
+[2025-03-03 21:16:24] Dcast operation completed successfully
+[2025-03-03 21:16:24] After dcast, dimensions: 9630x14
+[2025-03-03 21:16:24] Saving intermediate result after dcast
+[2025-03-03 21:16:24] Removing count/freq from gate_str
+[2025-03-03 21:16:24] Consolidating separate freq/count rows
+[2025-03-03 21:16:24] After consolidation, rows: 9630
+[2025-03-03 21:16:24] Setting NA freq to 0 and converting columns to numeric
+[2025-03-03 21:16:24] Saving intermediate result after numeric conversion
+[2025-03-03 21:16:24] Propagating counts iteratively
+[2025-03-03 21:16:24] Count propagation iteration: 1
+[2025-03-03 21:16:24] New counts to propagate: 180
+[2025-03-03 21:16:24] Count propagation iteration: 2
+[2025-03-03 21:16:24] New counts to propagate: 180
+[2025-03-03 21:16:24] Count propagation iteration: 3
+[2025-03-03 21:16:24] New counts to propagate: 4500
+[2025-03-03 21:16:24] Count propagation iteration: 4
+[2025-03-03 21:16:24] No new counts to propagate, breaking loop
+[2025-03-03 21:16:24] Count propagation complete after 4 iterations
+[2025-03-03 21:16:24] NA count values remaining: 4500
+[2025-03-03 21:16:24] Saving intermediate result after count propagation
+[2025-03-03 21:16:24] Cleaning gate names
+[2025-03-03 21:16:24] Renaming memory subsets
+[2025-03-03 21:16:24] Calculating count per bead
+[2025-03-03 21:16:24] Saving intermediate result after gate cleaning
+[2025-03-03 21:16:24] Adjusting replicate labels for TCSL250
+[2025-03-03 21:16:24] Checking rep column
+[2025-03-03 21:16:24] Rep column class: NULL
+[2025-03-03 21:16:24] Rep column unique values: 
+[2025-03-03 21:16:24] Found NA or NULL values in rep column, fixing...
+[2025-03-03 21:16:24] Creating rep_lbl factor safely
+[2025-03-03 21:16:24] Some rep values are not valid, creating factor with special handling
+[2025-03-03 21:16:24] Saving processed data
+[2025-03-03 21:16:24] Processed data saved
+[2025-03-03 21:16:24] Minimal TCSL250 processing script completed successfully!

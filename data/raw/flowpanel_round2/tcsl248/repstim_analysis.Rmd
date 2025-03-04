@@ -1,0 +1,564 @@
+---
+title: "tcsl248_wk1_repstim_exh"
+output: html_document
+date: "2024-11-19"
+html_document:
+  toc: true
+  toc_float: true
+  number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+library(ggplot2)
+library(patchwork)
+
+flow.dir <- '/Users/dbg/Library/CloudStorage/Box-Box/tcsl/flow/20241116.tcsl248_wk1_repstim/'
+knitr::opts_knit$set(flow.dir)
+```
+
+## Data Loading
+
+```{r}
+df_raw <- fread(paste0(flow.dir, 'populations.csv'))
+
+# keep *.fcs only
+df_raw <- df_raw[grepl('.fcs', V1)]
+
+# Extract plate and well
+df_raw[, `:=`(plate = as.integer(sub(".*Plate_([0-9]+).*", "\\1", V1)),
+          well = sub(".*-([A-Z][0-9]+) .*", "\\1", V1))]
+
+# remove unneeded columns
+df_raw[, grep("^V", names(df_raw)) := NULL]
+
+# melt
+df_melt <- unique(melt(df_raw, id.vars=c('plate', 'well'), variable.name='gate_str', value.name='value'))
+
+# remove freq parent from live car
+df_melt <- df_melt[!(grepl('Live \\w+ \\| Freq. of Parent', gate_str))]
+
+# extract columns
+df_melt[, `:=`(
+  gate_str = sub(' \\|.*', '', gate_str),
+  gate = sub(" \\|.*", "", sub(".*/", "", gate_str)),  # Remove everything after '|' and handle top-level gates
+  parent_gate = fifelse(grepl("^([^/]+) \\|", gate_str),        # Top-level gates (no preceding '/')
+                   NA_character_,                         # Set parent to NA for top-level gates
+                   sub(".*/([^/]+)/[^/]+ \\|.*", "\\1", gate_str)),  # Extract parent for nested gates
+  measure = gsub('.*\\| ', '', gate_str)  # else extract measure from gate_str and process
+)]
+
+df_melt[grepl('Freq', measure), measure := 'freq']
+df_melt[grepl('Count', measure), measure := 'count']
+df_melt[, measure := gsub('Geometric Mean \\((.*)\\)', 'gmean_\\1', measure)]
+df_melt[, measure := gsub('Mean \\((.*)\\)', 'mean_\\1', measure)]
+
+df_melt[grepl('mean', measure), parent_gate := gate]
+df_melt[grepl('mean', measure), gate := gsub('.*mean_(.*)', '\\1',  measure)]
+df_melt[grepl('mean', measure), gate_str := paste0(gate_str, '/', gsub('.*mean_(.*)', '\\1',  measure))]
+df_melt[grepl('mean', measure), measure := gsub('(.*mean)_.*', '\\1_mfi',  measure)]
+
+# if parent is 'Single Cells', make parent 'Lymphocytes' and keep only gate str with 'Freq. of Lymphocytes'
+df_melt[parent_gate == 'Single Cells', parent_gate := 'Lymphocytes']
+df_melt <- df_melt[is.na(parent_gate) | parent_gate != 'Lymphocytes' | (parent_gate == 'Lymphocytes' & measure == 'freq')]
+
+# add CAR status
+df_melt[, CAR := grepl('CAR', gate_str)]
+
+# add CD4/CD8 status
+df_melt[, subset := 'CD3']
+df_melt[grepl('/(CD[48])/', gate_str), subset := gsub('.*/(CD[48])/.*', '\\1', gate_str)]
+
+# get parent subset and car status
+df_melt[, parent_subset := subset]
+df_melt[grepl('^CD[48]$', parent_gate), parent_subset := 'CD3']
+df_melt[, parent_CAR := CAR]
+df_melt[gate == 'Live CAR', parent_CAR := FALSE]
+
+# separate freq and count
+df_melt <- dcast(df_melt, ... ~ measure, value.var='value')
+
+# remove count/freq from gate_str
+df_melt[, gate_str := sub(' \\|.*', '', gate_str)]
+
+# consolidate separate freq/count rows
+df_melt[is.na(parent_gate), freq := freq[!is.na(freq)], by= .(plate, well, gate, CAR, subset)]
+df_melt[is.na(parent_gate), count := count[!is.na(count)], by= .(plate, well, gate, CAR, subset)]
+df_melt <- unique(df_melt)
+
+# set NA freq to 0
+df_melt[is.na(freq), freq := 0]
+df_melt[, count := as.numeric(count)]
+df_melt[, freq := as.numeric(freq)]
+df_melt[, gmean_mfi := as.numeric(gmean_mfi)]
+df_melt[, mean_mfi := as.numeric(mean_mfi)]
+
+```
+
+## Propagate Counts
+
+```{r}
+# Propagate counts iteratively
+while (any(is.na(df_melt[!(gate %in% c('beads','Lymphocytes')), count]))) {
+
+  # get new counts
+  df_new_counts <- df_melt[!is.na(count), .(CAR, gate, subset, well, plate, count)][df_melt[is.na(count)],   
+    on=.(CAR=parent_CAR, gate=parent_gate, subset=parent_subset, well, plate)][
+      !is.na(count)][, 
+      .(plate, well, gate=i.gate, CAR=i.CAR, subset=i.subset,
+        count=round(as.numeric(freq)/100 * as.numeric(count)))]
+  
+  # add new counts onto df_melt
+  df_melt[df_new_counts, 
+          on = .(plate, well, gate, CAR, subset), 
+          count := fifelse(is.na(count), i.count, count)]
+}
+```
+
+## Clean Gates
+
+```{r}
+
+# Create a copy of df_melt to work on gate names
+df_melt[, gate_clean := gate]
+
+# Apply regex transformations
+df_melt[, gate_clean := gsub("\\+\\s*", "pos", gate_clean)]    # Replace '+' with 'pos' and handle trailing spaces
+df_melt[, gate_clean := gsub("\\-\\s*", "neg", gate_clean)]    # Replace '-' with 'neg' and handle trailing spaces
+df_melt[, gate_clean := gsub(",\\s*", "", gate_clean)]         # Remove spaces and commas after ','
+df_melt[, gate_clean := gsub("\\s+", "", gate_clean)]          # Remove all remaining spaces
+
+# Simplify Q gates
+df_melt[, gate_clean := gsub("^Q[0-9]+:CD", "CD", gate_clean)]  # Remove 'QX:' prefix and keep CDs intact for clarity
+
+# Case adjustments
+df_melt[, gate_clean := gsub("Lymphocytes", "lymphocytes", gate_clean)]  # Lowercase lymphocytes
+df_melt[, gate_clean := gsub("LiveCAR", "live_car", gate_clean)]         # Replace Live CAR with live_car
+df_melt[, gate_clean := gsub("LiveUntr", "live_untr", gate_clean)]       # Replace Live Untr with live_untr
+
+# Optional: Convert to factor and reorder levels if needed
+df_melt[, gate_clean := factor(gate_clean, levels = unique(gate_clean))]
+
+# Apply gsub to rename each memory subset
+df_melt[, gate_clean := gsub("CD45ROnegCD62Lpos", "Naive", gate_clean)]
+df_melt[, gate_clean := gsub("CD45ROposCD62Lpos", "Mem", gate_clean)]
+df_melt[, gate_clean := gsub("CD45ROposCD62Lneg", "Eff", gate_clean)]
+df_melt[, gate_clean := gsub("CD45ROnegCD62Lneg", "Emra", gate_clean)]
+
+# Convert to a factor to preserve ordering
+df_melt[, gate_clean := factor(gate_clean, levels = unique(gate_clean))]
+
+# get count per bead
+df_melt[, count_per_bead := count / count[gate == 'beads'][1], by=.(plate, well)]
+
+# Check the updated levels
+unique(df_melt$gate_clean)
+```
+
+## Combine subgates for 25, 27 and 127
+
+```{r}
+# Identify the gates to combine
+combine_gates <- c("CD25", "CD27", "CD127")
+
+# Loop through each gate and combine its subgates
+for (gate in combine_gates) {
+  
+  # Find all subgates for the current gate
+  subgate_pattern <- paste0(gate, 'pos')  # Match gates starting with the gate name
+  subgates <- grep(subgate_pattern, df_melt$gate_clean, value = TRUE)
+  
+  # Check if any subgates are present (skip if not found)
+  if (length(subgates) > 0) {
+    
+    # Sum counts for all subgates and assign to the combined gate
+    combined_counts <- df_melt[gate_clean %in% subgates, .(
+      count = sum(count, na.rm = TRUE), 
+      freq = sum(freq, na.rm= TRUE),
+      parent_gate, parent_CAR, parent_subset
+    ), 
+    by = .(plate, well, CAR, subset)]
+    
+    combined_counts[, gate_clean := gate]  # Assign the combined gate name
+    
+    # Add the combined gate to the main table (keep original gates)
+    df_melt <- rbind(df_melt, combined_counts, fill = TRUE)
+  }
+}
+
+# Convert gate_clean to factor again
+df_melt[, gate_clean := factor(gate_clean, levels = unique(gate_clean))]
+
+# Check the updated unique values
+unique(df_melt$gate_clean)
+
+```
+
+## Combine into CD3 subset
+
+```{r}
+
+total_cd4_cd8 <- df_melt[parent_gate %in% c("CD4", "CD8"), .(
+  total_count = sum(count, na.rm = TRUE)  # Total count across all gates for CD4 and CD8
+), by = .(plate, well, CAR)]
+
+# Step 1: Aggregate counts for CD4 and CD8
+cd3_counts <- df_melt[parent_gate %in% c("CD4", "CD8"), .(
+  count = sum(count, na.rm = TRUE),  # Sum counts across CD4 and CD8
+  parent_subset = unique(parent_subset),
+  parent_CAR = unique(parent_CAR)
+), by = .(plate, well, gate_clean, CAR)]
+
+# Step 2: Join total counts for CD4 and CD8
+cd3_counts <- cd3_counts[total_cd4_cd8, on = .(plate, well, CAR)]
+
+# Step 3: Calculate frequency using the joined total counts
+cd3_counts[, freq := (count / total_count) * 100]
+
+# Step 4: Assign CD3 as the parent gate
+cd3_counts[, parent_gate := "CD3"]
+
+# Step 5: Add the new CD3 gates to df_melt
+df_melt <- rbind(df_melt, cd3_counts, fill = TRUE)
+```
+
+## Add Plate Map
+
+```{r}
+# Function to load and process a plate map
+load_plate_metadata <- function(plate_map_filepath, exclude_empty = TRUE, rows = LETTERS[1:8], columns = 12) {
+  # Load plate map
+  plate_map <- fread(plate_map_filepath, header = FALSE)
+  
+  # Truncate or pad rows
+  if (nrow(plate_map) > length(rows)) {
+    plate_map <- plate_map[1:length(rows), ]
+  } else if (nrow(plate_map) < length(rows)) {
+    plate_map <- rbind(plate_map, matrix(NA, nrow = length(rows) - nrow(plate_map), ncol = ncol(plate_map)))
+  }
+  
+  # Truncate or pad columns
+  if (ncol(plate_map) > columns) {
+    plate_map <- plate_map[, 1:columns, with = FALSE]
+  } else if (ncol(plate_map) < columns) {
+    plate_map <- cbind(plate_map, matrix(NA, nrow = nrow(plate_map), ncol = columns - ncol(plate_map)))
+  }
+  
+  # Add row labels
+  plate_map[, rn := rows[seq_len(nrow(plate_map))]]  # Add row names as a column
+  
+  # Set column names
+  setnames(plate_map, c(as.character(seq_len(columns)), "rn"))
+  
+  # Convert to long format
+  long_data <- melt(as.data.table(plate_map), id.vars = "rn", variable.name = "col", value.name = "name")
+  long_data[, `:=`(well = paste0(rn, col), row = rn, col = as.integer(col))]
+  
+  # Exclude empty wells if required
+  if (exclude_empty) {
+    long_data <- long_data[!is.na(name)]
+  }
+  
+  # Return the long format data
+  return(long_data[, .(well, row, col, name)])
+}
+
+# Load plate maps
+plate_map_1 <- load_plate_metadata(paste0(flow.dir, "plate_map_1.csv"))
+plate_map_2 <- load_plate_metadata(paste0(flow.dir, "plate_map_2.csv"))
+
+# Add plate identifiers to the plate maps
+plate_map_1[, plate := 1]
+plate_map_2[, plate := 2]
+
+# Combine plate maps
+plate_map <- rbind(plate_map_1, plate_map_2)
+
+# Map plate map names onto df_melt
+df_melt <- merge(df_melt, plate_map, by = c("plate", "well"), all.x = TRUE)
+
+```
+```{r}
+# Step 1: Rename the `well` field to `well_id`
+setnames(df_melt, "name", "well_id")
+
+# Step 2: Split `well_id` into `rep` and `car_id`
+df_melt[, `:=`(
+  rep = substr(well_id, 1, 1),  # Extract the first character as `rep`
+  car_id = substr(well_id, 2, nchar(well_id))  # Extract the remainder as `car_id`
+)]
+
+# Step 2a: Convert `car_id` to a factor with correct order (1-16, U)
+df_melt[, car_id := factor(car_id, levels = c(as.character(1:16), "U"))]
+
+# Step 3: Join `df_melt` with `car_map.csv` on `car_id`
+car_map <- fread("car_map.csv")  # Load the mapping file
+car_map[, car_id := factor(car_id)]
+car_map[, car_name := factor(car_name)]
+df_melt <- merge(df_melt, car_map, by = "car_id", all.x = TRUE)
+df_melt[is.na(car_name), car_name := car_id]  # Replace missing car names with car_id
+```
+
+## Data Annotations and Factor Labels
+
+```{r}
+
+df_melt[rep == 'X', rep_type := 'Unstim']
+df_melt[rep %in% c('A','B'), rep_type := '1:8']
+df_melt[rep == 'C', rep_type := '1:4']
+df_melt[, stimmed := rep_type != 'Unstim']
+df_melt[, rep_lbl := factor(rep, levels=c('X','A','B','C'), labels = c('Unstim', '1:8a', '1:8b', '1:4'))]
+```
+
+## Plots
+
+```{r fig.width=10, fig.height=25}
+
+make_freq_plot <- function(df, this_subset, this_gate) {
+  
+  ggplot(
+  df[subset==this_subset & gate_clean %in% this_gate
+    & xor(CAR == TRUE, car_name == "U")][, 
+      car_stim := interaction(stimmed, car_name)][, 
+      car_stim := reorder(car_stim, freq)]) + 
+  geom_point(aes(x=car_stim, y=freq, color=rep_lbl)) + 
+  facet_wrap(~stimmed, scales='free') +
+  scale_x_discrete(labels = function(x) gsub("^[^\\.]*\\.", "", x)) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = paste0(this_subset, ' - ', this_gate))
+}
+
+make_count_plot <- function(df, this_subset) {
+  
+  ggplot(
+  df[subset=='CD3' & gate_clean == this_subset
+    & xor(CAR == TRUE, car_name == "U")][, 
+      car_rep := interaction(rep_type, car_name)][, 
+      car_rep := reorder(car_rep, count_per_bead)]) + 
+  geom_point(aes(x=car_rep, y=count_per_bead, color=rep_lbl)) + 
+  facet_wrap(~rep_type, scales='free') +
+  scale_x_discrete(labels = function(x) gsub("^[^\\.]*\\.", "", x)) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = paste0(this_subset))
+}
+
+make_mean_mfi_plot <- function(df, this_subset, this_gate, measure='mean_mfi') {
+  
+  ggplot(
+    df[subset==this_subset & gate_clean %in% this_gate
+      & xor(CAR == TRUE, car_name == "U")][, 
+        car_stim := interaction(stimmed, car_name)][, 
+        car_stim := reorder(car_stim, get(measure))]) + 
+    geom_point(aes(x=car_stim, y=get(measure), color=rep_lbl)) + 
+    facet_wrap(~stimmed, scales='free') +
+    scale_x_discrete(labels = function(x) gsub("^[^\\.]*\\.", "", x)) + 
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+    labs(title = paste0(this_subset, ' - ', this_gate))
+}
+```
+
+### Chronic Stim Expansion after 7 days
+
+This may not be as accurate as the count done with beads alone, should add that data & compare.
+
+```{r fig.width=10, fig.height=10}
+make_count_plot(df_melt[rep != 'X' & car_name != 'U'], 'CD8') /
+make_count_plot(df_melt[rep != 'X' & car_name != 'U'], 'CD4')
+```
+
+### Percent EGFR+
+
+```{r fig.width=10, fig.height=6}
+make_freq_plot(df_melt, 'CD3','live_car')
+```
+
+### Bead-based counts
+
+```{r fig.width=10, fig.height=10}
+
+flow_counts <- df_melt[rep != 'X' & car_name != 'U', 
+  .(rs_bead_count= mean(
+    count_per_bead[gate_clean=='live_untr'] + count_per_bead[gate_clean=='live_car'])),
+  by=.(car_id, well_id, rep, rep_lbl, car_name)]
+
+bead_count_df <- fread('../20241115.tcsl248_wk1_count/out_counts_clean.csv')
+bead_count_df[, V1 := NULL]
+setnames(bead_count_df, c('name'), c('well_id'))
+
+bead_count_df <- bead_count_df[flow_counts, on='well_id']
+
+ggplot(
+  melt(bead_count_df, id.vars=c('well_id', 'car_id','rep', 'car_name','rep_lbl'))[
+    !grepl('std',variable)][, car_rep := reorder(interaction(car_name, rep_lbl, variable, sep='|'), value)]) + 
+  geom_point(aes(x=car_rep, y=value, color=rep_lbl)) + 
+  facet_wrap(rep_lbl~variable, scales='free') + 
+  scale_x_discrete(labels = function(x) gsub("^([^\\|]+)\\|.*", "\\1", x)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+bead_count_df_melt <- melt(bead_count_df, id.vars=c('well_id', 'car_id','rep', 'rep_lbl', 'car_name'))[
+    !grepl('std',variable)][, 
+      scaled_value := scale(value), by=.(variable)][, 
+      car_rep := reorder(interaction(car_name, rep_lbl, sep='|'), scaled_value)]
+
+ggplot(bead_count_df_melt) + 
+  geom_point(aes(x=car_rep, y=scaled_value, color=rep_lbl)) + 
+  facet_wrap(~rep_lbl, scales='free') + 
+  scale_x_discrete(labels = function(x) gsub("^([^\\|]+)\\|.*", "\\1", x)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+ggplot(bead_count_df_melt[, car_name := reorder(car_name, scaled_value)][, scaled_value_mean := mean(scaled_value), by=.(car_name)]) + 
+  geom_point(aes(x=car_name, y=scaled_value, color=rep_lbl)) + 
+  geom_point(aes(x=car_name, y=scaled_value_mean), size=3) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x='CAR', y='Scaled Total Count')
+
+car_pcts <- df_melt[
+  rep != 'X' & car_name != 'U' & subset == 'CD3' & gate_clean %in% c('live_car','live_untr'), 
+  .(pct_car= mean(
+    freq[gate_clean == 'live_car']/(freq[gate_clean == 'live_car'] + 
+      freq[gate_clean == 'live_untr']))), 
+  by=.(car_id, well_id, rep, car_name)]
+
+bead_count_df_melt <- bead_count_df_melt[
+  car_pcts, on=.(car_id, well_id, rep, car_name)][, value_car_pos := value * pct_car][, 
+      scaled_value_car_pos := scale(value_car_pos), by=.(variable)]
+
+ggplot(bead_count_df_melt[, car_rep := reorder(car_rep, scaled_value_car_pos)]) + 
+  geom_point(aes(x=car_rep, y=scaled_value_car_pos, color=rep_lbl)) + 
+  facet_wrap(~rep_lbl, scales='free') + 
+  scale_x_discrete(labels = function(x) gsub("^([^\\|]+)\\|.*", "\\1", x)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x='CAR', y='Scaled CAR+ Count')
+
+ggplot(bead_count_df_melt[, car_name := reorder(car_name, scaled_value_car_pos)][, 
+    scaled_value_car_pos_mean := mean(scaled_value_car_pos), by=.(car_name)]) + 
+  geom_point(aes(x=car_name, y=scaled_value_car_pos, color=rep_lbl)) + 
+  geom_point(aes(x=car_name, y=scaled_value_car_pos_mean), size=3) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x='CAR', y='Scaled CAR+ Count')
+
+```
+
+## CD8 Plots
+
+### CD8 - Differentiation
+
+```{r fig.width=10, fig.height=15}
+make_freq_plot(df_melt, 'CD8','Mem') / make_freq_plot(df_melt, 'CD8','Eff') / make_freq_plot(df_melt, 'CD8','Naive') /  make_freq_plot(df_melt, 'CD8','Emra')
+
+```
+
+[Back to Top](#toc)
+
+### CD8 - Exhaustion
+
+```{r fig.width=10, fig.height=15}
+
+make_freq_plot(df_melt, 'CD8','PD1') / make_freq_plot(df_melt, 'CD8','CD39') / make_freq_plot(df_melt, 'CD8','TIM3') /  make_freq_plot(df_melt, 'CD8','LAG3')
+
+```
+
+```{r fig.width=10, fig.height=20}
+
+make_mean_mfi_plot(df_melt, 'CD8', 'LAG3') / make_mean_mfi_plot(df_melt, 'CD8', 'PD1') / make_mean_mfi_plot(df_melt, 'CD8', 'TIM3') / make_mean_mfi_plot(df_melt, 'CD8', 'CD39') 
+
+```
+
+[Back to Top](#toc)
+
+### CD8 - Activation
+
+```{r fig.width=10, fig.height=15}
+
+make_freq_plot(df_melt, 'CD8','CD25') / make_freq_plot(df_melt, 'CD8','CD27') / make_freq_plot(df_melt, 'CD8','CD127')
+```
+
+[Back to Top](#toc)
+
+## CD4 Plots
+
+### CD4 - Differentiation
+
+```{r fig.width=10, fig.height=15}
+
+make_freq_plot(df_melt, 'CD4','Mem') / make_freq_plot(df_melt, 'CD4','Eff') / make_freq_plot(df_melt, 'CD4','Naive') /  make_freq_plot(df_melt, 'CD4','Emra')
+
+```
+
+[Back to Top](#toc)
+
+### CD4 - Exhaustion
+
+```{r fig.width=10, fig.height=15}
+
+make_freq_plot(df_melt, 'CD4','PD1') / make_freq_plot(df_melt, 'CD4','CD39') / make_freq_plot(df_melt, 'CD8','TIM3') /  make_freq_plot(df_melt, 'CD8','LAG3')
+
+```
+
+```{r fig.width=10, fig.height=20}
+
+make_mean_mfi_plot(df_melt, 'CD4', 'LAG3') / make_mean_mfi_plot(df_melt, 'CD4', 'PD1') / make_mean_mfi_plot(df_melt, 'CD4', 'TIM3') / make_mean_mfi_plot(df_melt, 'CD4', 'CD39') 
+
+```
+
+[Back to Top](#toc)
+
+### CD4 - Activation
+
+```{r fig.width=10, fig.height=15}
+
+make_freq_plot(df_melt, 'CD4','CD25') / make_freq_plot(df_melt, 'CD4','CD27') / make_freq_plot(df_melt, 'CD4','CD127')
+```
+
+### Tile plot
+
+```{r fig.width=20, fig.height=8}
+
+gates = c('CD25','CD27','CD127','Eff','Emra','TIM3','Mem','Naive','CD39','PD1','LAG3')
+# assign gates to categories:
+gate_category <- c('Activation','Activation','Activation',
+                   'Differentiation','Differentiation',
+                   'Exhaustion','Differentiation','Differentiation','Exhaustion')
+# assign gate categories to df_melt
+df_melt <- df_melt[
+  gate_clean %in% c('CD25','CD27','CD127'), 
+  gate_category := 'Activation']
+df_melt <- df_melt[
+  gate_clean %in% c('Eff','Emra','Mem','Naive'), 
+  gate_category := 'Differentiation']
+df_melt <- df_melt[
+  gate_clean %in% c('TIM3','LAG3','CD39','PD1'), 
+  gate_category := 'Exhaustion']
+
+ggplot(
+  df_melt[car_name != 'U' & subset %in% c('CD4','CD8') & gate_clean %in% gates
+    & xor(CAR == TRUE, car_name == "U"), .(mean_freq= mean(freq)), 
+    by=.(car_name, subset, gate_clean, gate_category)][,
+          scaled_mean_freq := scale(mean_freq), by=.(subset, gate_clean)][, 
+            car_name_cat := reorder(interaction(car_name, gate_category, subset, sep='|'), scaled_mean_freq)]) + 
+  geom_tile(aes(x=car_name_cat, fill=scaled_mean_freq, y=gate_clean)) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_x_discrete(labels = function(x) gsub("^([^\\|]*)\\|.*", "\\1", x)) + 
+  scale_fill_distiller(palette='Spectral') +
+  geom_text(aes(x=car_name_cat, y=gate_clean, label=round(mean_freq))) + 
+  facet_wrap(subset~gate_category, scales='free')
+
+
+ggplot(
+  df_melt[car_name != 'U' & subset %in% c('CD4','CD8') & gate_category %in% 'Exhaustion'
+    & xor(CAR == TRUE, car_name == "U"), .(mean_mfi= mean(mean_mfi)), 
+    by=.(car_name, subset, gate_clean, gate_category)][,
+          scaled_mean_mfi := scale(mean_mfi), by=.(subset, gate_clean)][, 
+            car_name_cat := reorder(interaction(car_name, gate_category, subset, sep='|'), scaled_mean_mfi)]) + 
+  geom_tile(aes(x=car_name_cat, fill=scaled_mean_mfi, y=gate_clean)) +
+  scale_x_discrete(labels = function(x) gsub("^([^\\|]*)\\|.*", "\\1", x)) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_fill_distiller(palette='Spectral') +
+  geom_text(aes(x=car_name_cat, y=gate_clean, label=round(mean_mfi))) + 
+  facet_wrap(subset~gate_category, scales='free')
+```
+
+
+
+

@@ -4,6 +4,9 @@ library(patchwork)
 library(stringr)
 library(here)
 
+# Source the shared CAR sets definitions
+source(here("figures", "shared", "car_sets.R"))
+
 # Function to prepare data for plotting
 prepare_data <- function(df_combined, selected_cars = NULL, gates = NULL) {
   # Base filtering
@@ -310,7 +313,15 @@ chosen_gate <- c(
 
 single_cytokines <- c("IL2_pos", "TNFa_pos", "IFNg_pos")
 
-# Create three different plot versions
+# Create output directories if they don't exist
+dir.create(here("figures", "arrayed_cytokine_secretion_drb5_megf8", "output", "manual_sets"), 
+           showWarnings = FALSE, recursive = TRUE)
+dir.create(here("figures", "arrayed_cytokine_secretion_drb5_megf8", "output", "sets"), 
+           showWarnings = FALSE, recursive = TRUE)
+
+#######################
+# PART 1: MANUAL SETS #
+#######################
 
 # 1. Zeta, CD28, DRB5, TNR9 with TCSL241/242/248/250 (not 247)
 zeta_cars <- c("Zeta", "CD28", "DRB5", "TNR9", "MEGF8")
@@ -335,15 +346,14 @@ plots[["all_experiments_common_cars"]] <- create_combined_plot(
   " (All experiments, common CARs)"
 )
 
-# 3. All cars in TCSL248/250
+# 4. All cars in TCSL248/250
 hidden_cars <- c("NEG", "POS", "")
 plots[["second_round_cars"]] <- create_combined_plot(
   df_all_expts[expt %in% c("TCSL248", "TCSL250") & !(car_name %in% hidden_cars)],
   " (TCSL248/250, all CARs)"
 )
 
-# 3. All cytokines in TCSL247/248
-hidden_cars <- c("NEG", "POS", "")
+# 5. All cytokines in TCSL247/248
 plots[["first_round_cars"]] <- create_combined_plot(
   df_all_expts[expt %in% c("TCSL241", "TCSL242") & !(car_name %in% hidden_cars)],
   " (TCSL241/242, all CARs)"
@@ -377,7 +387,7 @@ plots[["zeta_cd28_tnr9_drb5_variants"]] <- create_normalized_plot(
   " (Zeta, CD28, TNR9, DRB5 variants)", normalize_to = 'average'
 )
 
-# Save plots
+# Save manual plots
 plot_dimensions <- list(
   "all_experiments_with_zeta" = c(15, 10),
   "tcsl247_248_250_with_drb528c" = c(8, 5),
@@ -390,14 +400,15 @@ plot_dimensions <- list(
   "first_round_cars_normalized" = c(12, 5)
 )
 
-# Save each plot
+# Save each manual plot
 for (name in names(plots)) {
   if (name %in% names(plot_dimensions)) {
     width <- plot_dimensions[[name]][1]
     height <- plot_dimensions[[name]][2]
     
-    fn <- here("figures", "arrayed_cytokine_secretion_drb5_megf8",
-                     paste0(name, ".pdf"))
+    # Save to the manual_sets directory
+    fn <- here("figures", "arrayed_cytokine_secretion_drb5_megf8", "output", "manual_sets",
+               paste0(name, ".pdf"))
 
     ggsave(
       filename = fn,
@@ -406,7 +417,111 @@ for (name in names(plots)) {
       height = height
     )
 
-    message(paste("Saved:\t", fn))
+    message(paste("Saved manual set plot:\t", fn))
   }
+}
 
+#######################
+# PART 2: CAR SETS    #
+#######################
+
+# Get the car sets from the shared file
+car_sets <- get_car_sets(cars_to_compare = c("Zeta"))
+
+# Initialize a list for car set plots
+car_set_plots <- list()
+
+# Filter data to only include round 2 experiments (TCSL248 and TCSL250)
+round2_data <- df_all_expts[expt %in% c("TCSL248", "TCSL250")]
+
+# Create plots for each car set
+for (set_name in names(car_sets)) {
+  set_info <- car_sets[[set_name]]
+  
+  # Skip the "all_cars" set as it's handled differently
+  if (set_name == "all_cars") {
+    # For all_cars, we include all CARs except hidden ones
+    filtered_data <- round2_data[!(car_name %in% hidden_cars)]
+    plot_title <- paste0(set_info$title_prefix, " (TCSL248/250)")
+  } else {
+    # Filter data for this car set
+    filtered_data <- filter_car_set(round2_data, set_info)
+    
+    # Skip if no data for this car set
+    if (nrow(filtered_data) == 0) {
+      message(paste("No data for car set:", set_name))
+      next
+    }
+    
+    plot_title <- paste0(set_info$title_prefix, " (TCSL248/250)")
+  }
+  
+  # Create standard plot
+  car_set_plots[[paste0(set_name, "_standard")]] <- create_combined_plot(
+    filtered_data,
+    paste0(" (", set_info$title_prefix, ")")
+  )
+  
+  # Check if Zeta is in the filtered data (not just in the car set definition)
+  has_zeta <- "Zeta" %in% unique(filtered_data$car_name)
+  
+  # Create normalized plot if Zeta is in the filtered data
+  if (has_zeta) {
+    car_set_plots[[paste0(set_name, "_normalized")]] <- create_normalized_plot(
+      filtered_data,
+      paste0(" (", set_info$title_prefix, ")"),
+      normalize_to = 'Zeta'
+    )
+  } else {
+    message(paste("Skipping normalized plot for", set_name, "- Zeta not in filtered data"))
+  }
+}
+
+# Save car set plots
+for (name in names(car_set_plots)) {
+  # Extract the base set name (without _standard or _normalized)
+  base_set_name <- gsub("_standard$|_normalized$", "", name)
+  
+  # Get dimensions from the car_sets list
+  if (base_set_name %in% names(car_sets)) {
+    dimensions <- car_sets[[base_set_name]]$dimensions
+    
+    # Adjust height for normalized plots (they're usually shorter)
+    if (grepl("_normalized$", name)) {
+      dimensions[2] <- dimensions[2] * 0.6  # Reduce height for normalized plots
+    }
+    
+    # Save to the sets directory
+    fn <- here("figures", "arrayed_cytokine_secretion_drb5_megf8", "output", "sets",
+               paste0(name, ".pdf"))
+    
+    ggsave(
+      filename = fn,
+      plot = car_set_plots[[name]],
+      width = dimensions[1],
+      height = dimensions[2]
+    )
+    
+    message(paste("Saved car set plot:\t", fn))
+  }
+}
+
+# Also save the original plots to the root directory for backward compatibility
+for (name in names(plots)) {
+  if (name %in% names(plot_dimensions)) {
+    width <- plot_dimensions[[name]][1]
+    height <- plot_dimensions[[name]][2]
+    
+    fn <- here("figures", "arrayed_cytokine_secretion_drb5_megf8",
+               paste0(name, ".pdf"))
+
+    ggsave(
+      filename = fn,
+      plot = plots[[name]],
+      width = width,
+      height = height
+    )
+
+    message(paste("Saved original plot for compatibility:\t", fn))
+  }
 } 

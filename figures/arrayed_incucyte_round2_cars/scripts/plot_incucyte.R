@@ -11,6 +11,9 @@ library(viridis)
 library(here)
 library(fs)
 
+# Source the shared CAR color definitions
+source(here("figures", "shared", "car_colors.R"))
+
 # Define paths
 processed_dir <- here("data", "processed", "incucyte_round2")
 figure_dir <- here("figures", "arrayed_incucyte_round2_cars")
@@ -29,39 +32,39 @@ theme_set(theme_bw() +
 
 # Define custom color palette for CAR variants
 # Group similar CARs with related colors
-car_colors <- c(
-  # Zeta - Black
-  "Zeta" = "#000000",
-  
-  # CD28 variants - Reds
-  "CD28" = "#E41A1C",
-  "CD28.lev11" = "#FB6A4A",
-  "CD28.lev20" = "#FCAE91",
-  
-  # TNR9 variants - Greens
-  "TNR9" = "#33A02C",
-  "TNR9.lev8" = "#78C679",
-  "TNR9.lev16" = "#C2E699",
-  
-  # DRB5/DRB528C variants - Blues
-  "DRB5" = "#0868AC",
-  "DRB5.lev8" = "#43A2CA",
-  "DRB528C" = "#1F78B4",
-  "DRB528C.lev26" = "#7BCCC4",
-  
-  # MEGF8 variants - Oranges
-  "MEGF8" = "#FF7F00",
-  "MEGF8.lev30" = "#FDB462",
-  
-  # Other CARs - Various colors
-  "MBTP1" = "#FFFF33",
-  "COMB.opt.16aa" = "#A65628",
-  "COMB.opt.27aa" = "#F781BF",
-  
-  # Controls - Gray
-  "U" = "#999999",
-  "K" = "#CCCCCC"
-)
+# car_colors <- c(
+#   # Zeta - Black
+#   "Zeta" = "#000000",
+#   
+#   # CD28 variants - Reds
+#   "CD28" = "#E41A1C",
+#   "CD28.lev11" = "#FB6A4A",
+#   "CD28.lev20" = "#FCAE91",
+#   
+#   # TNR9 variants - Greens
+#   "TNR9" = "#33A02C",
+#   "TNR9.lev8" = "#78C679",
+#   "TNR9.lev16" = "#C2E699",
+#   
+#   # DRB5/DRB528C variants - Blues
+#   "DRB5" = "#0868AC",
+#   "DRB5.lev8" = "#43A2CA",
+#   "DRB528C" = "#1F78B4",
+#   "DRB528C.lev26" = "#7BCCC4",
+#   
+#   # MEGF8 variants - Oranges
+#   "MEGF8" = "#FF7F00",
+#   "MEGF8.lev30" = "#FDB462",
+#   
+#   # Other CARs - Various colors
+#   "MBTP1" = "#FFFF33",
+#   "COMB.opt.16aa" = "#A65628",
+#   "COMB.opt.27aa" = "#F781BF",
+#   
+#   # Controls - Gray
+#   "U" = "#999999",
+#   "K" = "#CCCCCC"
+# )
 
 # Define final timepoints for each experiment
 final_timepoints_map <- list(
@@ -78,7 +81,7 @@ final_timepoints_map <- list(
 
 
 # Modify create_time_course_plot function to handle combined experiments
-create_time_course_plot <- function(data, title, facet_ncol = 3, car_subset = NULL) {
+create_time_course_plot <- function(data, title, facet_ncol = 4, car_subset = NULL) {
   # Filter data to just what we need
   plot_data <- data[measurement == "incucyte_total_int_intensity"]
   
@@ -92,7 +95,7 @@ create_time_course_plot <- function(data, title, facet_ncol = 3, car_subset = NU
   
   # Create a combined dataset with appropriate filtering by final timepoints
   filtered_data <- data.table()
-  
+
   # Process each experiment-week combination and filter by appropriate final timepoint
   for (exp in unique(plot_data$experiment)) {
     exp_lower <- tolower(exp)
@@ -336,8 +339,9 @@ car_sets <- list(
     name = "megf8_all_variants",
     title_prefix = "MEGF8 Variants",
     cars = c(cars_to_compare, grep("^MEGF8", names(car_colors), value = TRUE)),
-    time_course_dimensions = c(12, 15),
-    dotplot_dimensions = c(14, 6)
+    time_course_dimensions = c(15, 5),
+    dotplot_dimensions = c(14, 6),
+    facet_ncol = 9
   ),
   drb5 = list(
     name = "drb5",
@@ -350,14 +354,14 @@ car_sets <- list(
     name = "drb5_all_variants",
     title_prefix = "All DRB5/DRB528C Variants",
     cars = c(cars_to_compare, grep("^DRB", names(car_colors), value = TRUE)),
-    time_course_dimensions = c(12, 15),
+    time_course_dimensions = c(18, 12),
     dotplot_dimensions = c(14, 6)
   ),
   tnr9_variants = list(
     name = "tnr9_variants",
     title_prefix = "TNR9 Variants",
     cars = c(cars_to_compare, grep("^TNR9", names(car_colors), value = TRUE)),
-    time_course_dimensions = c(12, 15),
+    time_course_dimensions = c(18, 12),
     dotplot_dimensions = c(14, 6)
   ),
   cd28_variants = list(
@@ -412,20 +416,24 @@ dotplot_data[experiment == "tcsl250" & week == "0_purified", `:=`(
   week = "0"
 )]
 
-# Print unique experiment-week combinations to verify
-print("Unique experiment-week combinations in dotplot_data:")
-print(unique(dotplot_data[, .(experiment, week)]))
-
 # Loop through each CAR set and create the plots
 for (set_name in names(car_sets)) {
   set_info <- car_sets[[set_name]]
+
+  print("--------------------------------")
+  print(set_info$name)
+  print(set_info$title_prefix)
+  print(unique(set_info$cars))
+
   
   # Create time course plot
   time_course_key <- paste0("combined_", set_info$name)
   plots[[time_course_key]] <- create_time_course_plot(
     combined_data,
     title = paste("Combined Experiments -", set_info$title_prefix),
-    car_subset = unique(set_info$cars)
+    car_subset = unique(set_info$cars),
+    #use set_info$ncol if available, else use 4:
+    facet_ncol = ifelse(is.null(set_info$facet_ncol), 4, set_info$facet_ncol)
   )
   
   # Create dot plot
